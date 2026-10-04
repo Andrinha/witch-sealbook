@@ -1,0 +1,21 @@
+<!-- The tray of a Wall-Anchored Floatglow Lamp (effects/light.lua): a small physics body drawn in its image's own
+     colors. It starts static, held on its wall bracket; the lamp's effect releases it (PhysicsSetStatic) when there
+     is no wall beside it, and it falls, rolls and can be kicked like any prop. The effect finds its tray again after
+     a reload by the "witch_lamp" key it adds here. -->
+<Entity tags="hittable,teleportable_NOT,prop,prop_physics,witch_lamp_tray">
+	<PhysicsBodyComponent
+		allow_sleep="1"
+		angular_damping="0.3"
+		linear_damping="0.05"
+		fixed_rotation="0"
+		is_static="1"
+		auto_clean="0"
+		kills_entity="1"
+	></PhysicsBodyComponent>
+
+	<PhysicsImageShapeComponent
+		centered="1"
+		image_file="mods/witch_notebook/files/gfx/floatglow_tray.png"
+		material="metal_prop"
+	></PhysicsImageShapeComponent>
+</Entity>

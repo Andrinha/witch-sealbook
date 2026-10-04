@@ -1,0 +1,9 @@
+<Entity>
+	<Base file="data/entities/items/pickup/potion.xml">
+	</Base>
+	<!-- potion.lua fills the flask with this material -->
+	<VariableStorageComponent
+		name="potion_material"
+		value_string="witch_ink"
+	></VariableStorageComponent>
+</Entity>

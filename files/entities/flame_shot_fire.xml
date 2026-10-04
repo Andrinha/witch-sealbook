@@ -1,0 +1,37 @@
+<Entity name="witch_flame_shot_fire" tags="witch_flame_shot_fire">
+	<!-- Subdued native fire follows the hot gas for material interactions.
+	     One-frame emissive gas sprites render the solver's main visible plume. -->
+	<ParticleEmitterComponent
+		emitted_material_name="fire"
+		custom_style="FIRE"
+		create_real_particles="0"
+		emit_real_particles="1"
+		emit_cosmetic_particles="0"
+		emit_only_if_there_is_space="1"
+		cosmetic_force_create="0"
+		collide_with_grid="1"
+		gravity.x="0"
+		gravity.y="-25"
+		area_circle_radius.min="0"
+		area_circle_radius.max="1"
+		x_vel_min="-3"
+		x_vel_max="3"
+		y_vel_min="-8"
+		y_vel_max="-3"
+		count_min="1"
+		count_max="2"
+		lifetime_min="0.04"
+		lifetime_max="0.075"
+		airflow_force="0.05"
+		airflow_time="0.8"
+		airflow_scale="0.07"
+		friction="0.01"
+		attractor_force="0"
+		is_trail="0"
+		render_on_grid="1"
+		fade_based_on_lifetime="1"
+		emission_interval_min_frames="2"
+		emission_interval_max_frames="2"
+		is_emitting="0"
+	/>
+</Entity>

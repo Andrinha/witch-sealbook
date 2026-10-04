@@ -1,0 +1,127 @@
+<!-- Template of a flying seal projectile (column, and levitation as a slow orb). init.lua fills the double-brace
+     fields from each element's look in dictionary.lua and creates carriers/bolt_<element>.xml and
+     carriers/orb_<element>.xml; cast.lua then tunes damage, speed and lifetime by the seal's parameters. -->
+<Entity name="$projectile_default" tags="projectile_player,witch_seal_projectile">
+	<Base file="data/entities/base_projectile.xml">
+		<VelocityComponent
+			gravity_y="{{gravity}}"
+			air_friction="{{air_friction}}"
+			mass="0.05"
+		></VelocityComponent>
+	</Base>
+
+	<ProjectileComponent
+		_enabled="1"
+		lob_min="1"
+		lob_max="1"
+		speed_min="{{speed}}"
+		speed_max="{{speed}}"
+		die_on_low_velocity="{{die_on_low_velocity}}"
+		on_collision_die="1"
+		die_on_liquid_collision="0"
+		lifetime="{{lifetime}}"
+		damage="{{damage}}"
+		knockback_force="{{knockback}}"
+		on_death_explode="{{explode}}"
+		on_lifetime_out_explode="{{explode}}"
+		explosion_dont_damage_shooter="1"
+		on_death_emit_particle="{{splash}}"
+		on_death_emit_particle_type="{{material}}"
+		on_death_emit_particle_count="{{splash_count}}"
+		damage_game_effect_entities="{{status}}"
+		muzzle_flash_file=""
+		shoot_light_flash_r="{{r}}"
+		shoot_light_flash_g="{{g}}"
+		shoot_light_flash_b="{{b}}"
+		shoot_light_flash_radius="60"
+		>
+		<damage_by_type {{damage_by_type}} ></damage_by_type>
+		<config_explosion
+			never_cache="1"
+			explosion_radius="{{radius}}"
+			damage="{{explosion_damage}}"
+			create_cell_probability="{{cell_probability}}"
+			create_cell_material="{{material}}"
+			hole_enabled="{{hole}}"
+			hole_image="data/temp/explosion_hole.png"
+			ray_energy="{{ray_energy}}"
+			explosion_sprite="data/particles/explosion_016.xml"
+			explosion_sprite_lifetime="0"
+			particle_effect="0"
+			damage_mortals="1"
+			camera_shake="2"
+			sparks_enabled="1"
+			sparks_count_min="5"
+			sparks_count_max="15"
+			spark_material="{{spark}}"
+			stains_enabled="0"
+			audio_enabled="0"
+		></config_explosion>
+	</ProjectileComponent>
+
+	<SpriteComponent
+		_enabled="1"
+		alpha="1"
+		image_file="{{sprite}}"
+		offset_x="{{sprite_offset}}"
+		offset_y="{{sprite_offset}}"
+		additive="1"
+		emissive="1"
+	></SpriteComponent>
+
+	<!-- a trail of sparks in the element's color -->
+	<ParticleEmitterComponent
+		emitted_material_name="{{spark}}"
+		x_pos_offset_min="-1"
+		x_pos_offset_max="1"
+		y_pos_offset_min="-1"
+		y_pos_offset_max="1"
+		x_vel_min="-10"
+		x_vel_max="10"
+		y_vel_min="-10"
+		y_vel_max="10"
+		count_min="1"
+		count_max="2"
+		lifetime_min="0.2"
+		lifetime_max="0.5"
+		is_trail="1"
+		trail_gap="0.3"
+		render_on_grid="1"
+		fade_based_on_lifetime="1"
+		create_real_particles="0"
+		emit_cosmetic_particles="1"
+		emission_interval_min_frames="1"
+		emission_interval_max_frames="1"
+		is_emitting="1"
+	></ParticleEmitterComponent>
+
+	<!-- the element's material dripping from it (none for elements without one) -->
+	<ParticleEmitterComponent
+		emitted_material_name="{{material}}"
+		x_pos_offset_min="-1"
+		x_pos_offset_max="1"
+		y_pos_offset_min="-1"
+		y_pos_offset_max="1"
+		x_vel_min="-10"
+		x_vel_max="10"
+		y_vel_min="-10"
+		y_vel_max="10"
+		count_min="1"
+		count_max="{{trail_count}}"
+		lifetime_min="0.1"
+		lifetime_max="0.3"
+		create_real_particles="1"
+		emit_cosmetic_particles="0"
+		emission_interval_min_frames="{{trail_interval}}"
+		emission_interval_max_frames="{{trail_interval}}"
+		is_emitting="{{trail}}"
+	></ParticleEmitterComponent>
+
+	<LightComponent
+		_enabled="1"
+		radius="{{light_radius}}"
+		r="{{r}}"
+		g="{{g}}"
+		b="{{b}}"
+	></LightComponent>
+</Entity>

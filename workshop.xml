@@ -1,0 +1,8 @@
+<Mod
+	name="The Witch's Sealbook"
+	description="Draw magic seals with ink in a spellbook, collect seal sheets, and cast what you create. Fan-made magic inspired by Witch Hat Atelier."
+	tags="gameplay,spells,items,alchemy"
+	dont_upload_folders="docs|tests|tools|.idea|.git"
+	dont_upload_files="PLAN.md|WORKSHOP_RELEASE.md"
+>
+</Mod>

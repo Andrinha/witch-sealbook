@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+tests/examples.html
+tests/*.log
+tests/output/
+/.idea/*
+tests/wiki_sheet.html
+PLAN.md

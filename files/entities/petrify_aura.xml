@@ -1,0 +1,24 @@
+<Entity name="witch_petrify_ring">
+	<!-- A ring of the Petrification seal's stone (effects/zone.lua, petrify): it turns every cell within its radius to grey
+	     stone once, then is gone - as the world turns to gold at the game's end (boss_centipede/ending/midas.xml). The
+	     growing aura makes one every few pixels, each a little wider, its 'radius' and 'min_radius' set by the script:
+	     each converts the new band at the front. -->
+	<MagicConvertMaterialComponent
+		from_any_material="1"
+		to_material="rock_static_grey"
+		is_circle="1"
+		radius="8"
+		min_radius="0"
+		steps_per_frame="6"
+		loop="0"
+		kill_when_finished="1"
+		convert_same_material="0"
+		extinguish_fire="1"
+		clean_stains="1"
+	></MagicConvertMaterialComponent>
+
+	<!-- in case the conversion never finishes -->
+	<LifetimeComponent
+		lifetime="120"
+	></LifetimeComponent>
+</Entity>

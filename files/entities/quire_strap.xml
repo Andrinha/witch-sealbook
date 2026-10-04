@@ -1,0 +1,36 @@
+<Entity name="witch_quire_strap" tags="witch_quire_strap" serialize="0">
+	<!-- One end of the Palm Quire's strap, hanging from the book lying about or held (quire_strap_world.lua puts its first
+	     point under the book every frame, and kills it while the book is in the inventory or gone): a short Verlet chain
+	     like the game's ribbons, swinging with the book's moves and in the wind. Not saved: the book hangs new ones. -->
+
+	<VerletPhysicsComponent
+		num_points="4"
+		stiffness="1.6"
+		velocity_dampening="0.85"
+		resting_distance="1.5"
+		simulate_gravity="1"
+		simulate_wind="1"
+		wind_change_speed="1.5"
+		mass_min="0.12"
+		mass_max="0.15"
+		scale_sprite_x="0"
+		pixelate_sprite_transforms="1"
+	></VerletPhysicsComponent>
+
+	<SpriteComponent image_file="mods/witch_notebook/files/gfx/quire_strap_link.png" offset_x="0" offset_y="0" z_index="0.01"
+		update_transform="0" update_transform_rotation="0" ></SpriteComponent>
+	<SpriteComponent image_file="mods/witch_notebook/files/gfx/quire_strap_link.png" offset_x="0" offset_y="0" z_index="0.01"
+		update_transform="0" update_transform_rotation="0" ></SpriteComponent>
+	<SpriteComponent image_file="mods/witch_notebook/files/gfx/quire_strap_link.png" offset_x="0" offset_y="0" z_index="0.01"
+		update_transform="0" update_transform_rotation="0" ></SpriteComponent>
+
+	<VariableStorageComponent
+		name="witch_quire_book"
+		value_int="0"
+	></VariableStorageComponent>
+
+	<LuaComponent
+		execute_every_n_frame="10"
+		script_source_file="mods/witch_notebook/files/quire_strap_check.lua"
+	></LuaComponent>
+</Entity>

@@ -1,0 +1,29 @@
+<!-- The pen that draws a Water Rose (effects/rose.lua): the emitter of the game's growing roots (root_grower.xml)
+     with another material. It leaves real cells in the grid where it is, every frame, within its brush - the
+     position offsets, which the effect narrows for the petals. The effect moves it and turns it on and off. -->
+<Entity tags="witch_rose_pen">
+	<ParticleEmitterComponent
+		emitted_material_name="witch_still_water"
+		offset.x="0"
+		offset.y="0"
+		x_pos_offset_min="-1"
+		x_pos_offset_max="1"
+		y_pos_offset_min="-1"
+		y_pos_offset_max="1"
+		x_vel_min="0"
+		x_vel_max="0"
+		y_vel_min="0"
+		y_vel_max="0"
+		count_min="6"
+		count_max="6"
+		lifetime_min="0.1"
+		lifetime_max="0.3"
+		create_real_particles="1"
+		emission_interval_min_frames="1"
+		emission_interval_max_frames="1"
+		is_emitting="0"
+		friction="0"
+		render_on_grid="1"
+		attractor_force="0"
+	></ParticleEmitterComponent>
+</Entity>

@@ -1,0 +1,153 @@
+<Materials>
+  <!-- Witch ink: the notebook draws with it (see ink.lua). Burns like oil, water washes it into murky water -->
+  <CellData
+	name="witch_ink"
+	ui_name="Conjuring Ink"
+	tags="[liquid],[burnable],[impure]"
+	burnable="1"
+	density="3"
+	cell_type="liquid"
+	wang_color="ff2b1f5e"
+	generates_smoke="0"
+	liquid_gravity="0.8"
+	liquid_sand="0"
+	liquid_stains="2"
+	gfx_glow="60"
+	fire_hp="200"
+	on_fire="0"
+	requires_oxygen="1"
+	temperature_of_fire="90"
+	autoignition_temperature="40"
+	electrical_conductivity="0"
+	audio_materialaudio_type="MAGICAL"
+	show_in_creative_mode="1"
+	>
+	<Graphics
+	color="ff3a2a8a" >
+	</Graphics>
+  </CellData>
+
+  <!-- Dyed inks (ink.lua INKS): conjuring ink mixed with a dye, in a flask or anywhere they meet. They draw like it,
+       and the seals drawn with them take on the dye's effect. -->
+  <CellDataChild _parent="witch_ink" _inherit_reactions="0"
+	name="witch_ink_blood"
+	ui_name="Blood Ink"
+	wang_color="ff8a1030"
+	gfx_glow="80" >
+	<Graphics
+	color="ff96122e" >
+	</Graphics>
+  </CellDataChild>
+
+  <CellDataChild _parent="witch_ink" _inherit_reactions="0"
+	name="witch_ink_azure"
+	ui_name="Azure Ink"
+	wang_color="ff2a82e0"
+	gfx_glow="120" >
+	<Graphics
+	color="ff2882eb" >
+	</Graphics>
+  </CellDataChild>
+
+  <CellDataChild _parent="witch_ink" _inherit_reactions="0"
+	name="witch_ink_clear"
+	ui_name="Clear Ink"
+	wang_color="ffa8c8e8"
+	gfx_glow="40" >
+	<Graphics
+	color="50aac8eb" >
+	</Graphics>
+  </CellDataChild>
+
+  <CellDataChild _parent="witch_ink" _inherit_reactions="0"
+	name="witch_ink_gold"
+	ui_name="Golden Ink"
+	wang_color="ffe8b840"
+	gfx_glow="255" >
+	<Graphics
+	color="ffebbe3c" >
+	</Graphics>
+  </CellDataChild>
+
+  <CellDataChild _parent="witch_ink" _inherit_reactions="0"
+	name="witch_ink_oil"
+	ui_name="Oil Ink"
+	wang_color="ff285a50"
+	gfx_glow="30" >
+	<Graphics
+	color="ff285a50" >
+	</Graphics>
+  </CellDataChild>
+
+  <CellDataChild _parent="witch_ink" _inherit_reactions="0"
+	name="witch_ink_swift"
+	ui_name="Swift Ink"
+	wang_color="ff5adc96"
+	gfx_glow="150" >
+	<Graphics
+	color="ff5adc96" >
+	</Graphics>
+  </CellDataChild>
+
+  <!-- Still water: water held in the shape a seal gave it (the Water Rose, effects/rose.lua). It stands still, like
+       the game's static water - one can wade through it and it wets - until the spell ends and turns it back into
+       water. It does not drip by itself: the spell that shaped it lets drops of water fall from it. -->
+  <CellDataChild _parent="water_static" _inherit_reactions="1"
+	name="witch_still_water"
+	ui_name="Still Water"
+	wang_color="b04f9fd1"
+	gfx_glow="100" >
+	<Graphics
+	color="b05aa8dc" >
+	</Graphics>
+  </CellDataChild>
+
+  <!-- Caged water: the sphere of the Water Cage (effects/water_cage.lua) - its body, clear enough to see who is
+       sealed inside, and its bright skin and gleam. Both stand still like the Water Rose's water until the spell
+       ends and turns them into water that falls and dries away. -->
+  <CellDataChild _parent="water_static" _inherit_reactions="1"
+	name="witch_cage_water"
+	ui_name="Caged Water"
+	wang_color="904a96d6"
+	gfx_glow="90" >
+	<Graphics
+	color="8a4c9ae6" >
+	</Graphics>
+  </CellDataChild>
+
+  <CellDataChild _parent="water_static" _inherit_reactions="1"
+	name="witch_cage_rim"
+	ui_name="Caged Water"
+	wang_color="c0a8d8f6"
+	gfx_glow="170" >
+	<Graphics
+	color="d0c4eaff" >
+	</Graphics>
+  </CellDataChild>
+
+  <!-- the dyes: a cell of each turns a cell of conjuring ink into two of the dyed ink (as blood tops up an ink pot) -->
+  <Reaction probability="30" input_cell1="witch_ink" input_cell2="blood" output_cell1="witch_ink_blood" output_cell2="witch_ink_blood" ></Reaction>
+  <Reaction probability="30" input_cell1="witch_ink" input_cell2="blood_worm" output_cell1="witch_ink_blood" output_cell2="witch_ink_blood" ></Reaction>
+  <Reaction probability="30" input_cell1="witch_ink" input_cell2="blood_fungi" output_cell1="witch_ink_blood" output_cell2="witch_ink_blood" ></Reaction>
+  <Reaction probability="30" input_cell1="witch_ink" input_cell2="blood_cold" output_cell1="witch_ink_blood" output_cell2="witch_ink_blood" ></Reaction>
+  <Reaction probability="30" input_cell1="witch_ink" input_cell2="blood_fading" output_cell1="witch_ink_blood" output_cell2="witch_ink_blood" ></Reaction>
+  <Reaction probability="30" input_cell1="witch_ink" input_cell2="magic_liquid_mana_regeneration" output_cell1="witch_ink_azure" output_cell2="witch_ink_azure" ></Reaction>
+  <Reaction probability="30" input_cell1="witch_ink" input_cell2="magic_liquid_invisibility" output_cell1="witch_ink_clear" output_cell2="witch_ink_clear" ></Reaction>
+  <Reaction probability="30" input_cell1="witch_ink" input_cell2="gold" output_cell1="witch_ink_gold" output_cell2="witch_ink_gold" ></Reaction>
+  <Reaction probability="30" input_cell1="witch_ink" input_cell2="gold_molten" output_cell1="witch_ink_gold" output_cell2="witch_ink_gold" ></Reaction>
+  <Reaction probability="30" input_cell1="witch_ink" input_cell2="gold_radioactive" output_cell1="witch_ink_gold" output_cell2="witch_ink_gold" ></Reaction>
+  <Reaction probability="30" input_cell1="witch_ink" input_cell2="midas" output_cell1="witch_ink_gold" output_cell2="witch_ink_gold" ></Reaction>
+  <Reaction probability="30" input_cell1="witch_ink" input_cell2="oil" output_cell1="witch_ink_oil" output_cell2="witch_ink_oil" ></Reaction>
+  <Reaction probability="30" input_cell1="witch_ink" input_cell2="magic_liquid_movement_faster" output_cell1="witch_ink_swift" output_cell2="witch_ink_swift" ></Reaction>
+
+  <!-- water washes the inks out, all but the oily one -->
+  <Reaction probability="10"
+	input_cell1="witch_ink"		input_cell2="water"
+	output_cell1="water_swamp"	output_cell2="water" >
+  </Reaction>
+  <Reaction probability="10" input_cell1="witch_ink_blood" input_cell2="water" output_cell1="water_swamp" output_cell2="water" ></Reaction>
+  <Reaction probability="10" input_cell1="witch_ink_azure" input_cell2="water" output_cell1="water_swamp" output_cell2="water" ></Reaction>
+  <Reaction probability="10" input_cell1="witch_ink_clear" input_cell2="water" output_cell1="water_swamp" output_cell2="water" ></Reaction>
+  <Reaction probability="10" input_cell1="witch_ink_gold" input_cell2="water" output_cell1="water_swamp" output_cell2="water" ></Reaction>
+  <Reaction probability="10" input_cell1="witch_ink_swift" input_cell2="water" output_cell1="water_swamp" output_cell2="water" ></Reaction>
+</Materials>

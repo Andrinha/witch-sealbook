@@ -1,0 +1,11 @@
+<Mod
+	name="The Witch's Sealbook"
+	description="Open your spellbook with the key set in mod settings,
+or click while holding a book with no active seal.
+Draw a seal with witch ink: a ring,
+an element sigil in the center and signs around it,
+as in Witch Hat Atelier. Pick an active seal,
+hold the book and click to cast it."
+	request_no_api_restrictions="0"
+>
+</Mod>
