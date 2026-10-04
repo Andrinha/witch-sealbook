@@ -406,18 +406,40 @@ function seal_middle( strokes, entry )
 	return first
 end
 
--- The one wiki's page whose symbols (as it reads, or as it is drawn of) are exactly a reading's, or nil: a seal of the
--- page's symbols laid out its own way (Pyreball's signs on the axes instead of the diagonals) is far from the page in
--- shape, but no other page has those symbols. A few symbols say little: a lone sword sigil is not yet Raincleaver
+-- How far a drawing is in shape from one wiki's page (as seal_canonical measures it), or nil when it is far off
+local function page_distance( seal, key )
+	seal_canonical( seal ) -- builds the pages' clouds
+	if not grimoire_clouds then return nil end
+	local ring, parts = find_ring( seal.strokes or {} )
+	if not ring then return nil end
+	local mine = seal_cloud( seal.strokes, ring, parts )
+	if not mine or mine.n < 4 then return nil end
+	local best
+	for _, entry in ipairs( grimoire_clouds ) do
+		local other = entry.cloud
+		if entry.key == key and other and other.n >= 4 then
+			for _, try in ipairs( CANON_TRIES ) do
+				local bound = CANON_MATCH * 2
+				local d1 = chamfer( mine, other, try[1], bound, try[2] )
+				if d1 < bound then
+					local d = ( d1 + chamfer( other, mine, -try[1], bound, 1 / try[2] ) ) / 2
+					if not best or d < best then best = d end
+				end
+			end
+		end
+	end
+	return best
+end
+
+-- The one wiki's page whose symbols (as it reads, or as it is drawn of) are exactly a reading's, and how far the
+-- drawing is from it in shape (nil: not measured), or nil: a seal of the page's symbols laid out its own way
+-- (Pyreball's signs on the axes instead of the diagonals) is far from the page in shape, but no other page has
+-- those symbols. A few symbols say little - a lone sword sigil is not yet Raincleaver, wind with a levitation sign
+-- is not always Skysoaring - so such a seal must also look like its page (Skysoaring's big arrow over the sigil)
 local SYMBOLS_PAGE_SIGNS = 3
 local pages_by_symbols
-local function symbols_page( symbols )
+local function symbols_page( seal )
 	if not GRIMOIRE then return nil end
-	local signs = 0
-	for _, s in ipairs( symbols or {} ) do
-		if s.kind == "sign" then signs = signs + 1 end
-	end
-	if signs < SYMBOLS_PAGE_SIGNS then return nil end
 	if not pages_by_symbols then
 		pages_by_symbols = {}
 		for _, entry in ipairs( GRIMOIRE ) do
@@ -431,11 +453,20 @@ local function symbols_page( symbols )
 			end
 		end
 	end
-	local list = pages_by_symbols[seal_symbols_key( symbols )]
+	local list = pages_by_symbols[seal_symbols_key( seal.symbols )]
 	if not list or list.count ~= 1 then return nil end
-	for name, key in pairs( list ) do
-		if name ~= "count" then return key end
+	local key
+	for name, k in pairs( list ) do
+		if name ~= "count" then key = k end
 	end
+	local signs = 0
+	for _, s in ipairs( seal.symbols or {} ) do
+		if s.kind == "sign" then signs = signs + 1 end
+	end
+	if signs >= SYMBOLS_PAGE_SIGNS then return key end
+	local distance = page_distance( seal, key )
+	if distance and distance <= CANON_MATCH then return key, distance end
+	return nil
 end
 
 -- The wiki's seal a read drawing is by its shape, and how far it is from it
@@ -465,5 +496,5 @@ end
 function seal_name( seal )
 	local key, distance = seal_shape_name( seal )
 	if key then return key, distance end
-	return symbols_page( seal.symbols )
+	return symbols_page( seal )
 end

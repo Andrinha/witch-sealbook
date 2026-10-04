@@ -27,6 +27,7 @@ local WEAK_MARK = 0.5         -- ... makes the small marks beside it read worse 
 local CENTRAL_OUTER = 0.5     -- a small part of the sigil (a ray, a drop) this close joins it ...
 local CENTRAL_PART = 0.2      -- ... if it is this small ...
 local CENTRAL_REACH = 0.06    -- ... and this close to what stands in the middle (shares of the radius)
+local OFF_CENTER_REACH = 0.12 -- a sigil off the middle: how close its small parts lie (players draw its rays apart)
 local CENTRAL = 0.35         -- strokes whose middle is this close to the center are read together, as the sigil
 local SPAN = 0.55            -- ... unless it is a big sign spanning the seal (Skysoaring, Flame Shot)
 local SPAN_MARGIN = 0.06     -- a sign in the center must be read this much better than as a sigil
@@ -1323,13 +1324,48 @@ local function parse_with( strokes, noise )
 			local list, v = judge( split )
 			if v > value then symbols, value = list, v end
 		end
-		if symbols and value >= 0.5 then
+		-- a sign in the middle (Skysoaring's big levitation arrow) is no sigil to keep together: its parts farther out
+		-- (the arrow's bar) would be torn off it, so the whole inside is read the usual way
+		local has_sigil = false
+		for _, sym in ipairs( symbols or {} ) do
+			if sym.kind == "sigil" then has_sigil = true end
+		end
+		if symbols and value >= 0.5 and has_sigil then
 			middle.symbols = symbols
 			groups = segment( rest, ring )
 			table.insert( groups, 1, middle )
 		end
 	end
 	groups = groups or segment( remaining, ring )
+	-- a sigil standing off the middle (Skysoaring's wind under its big arrow) keeps its small parts too: marks right
+	-- beside a sigil read well, every stroke of them small, are its rays and drops, not signs of their own
+	for _, g in ipairs( groups ) do
+		local sym = g.symbols and #g.symbols == 1 and g.symbols[1]
+		if sym and sym.kind == "sigil" and sym.score >= STRONG_SIGIL and not g.taken then
+			local m = OFF_CENTER_REACH * ring.r
+			local core = g.box
+			for _, o in ipairs( groups ) do
+				local part = o ~= g and not o.taken and o.symbols ~= nil
+				for _, os in ipairs( part and o.symbols or {} ) do
+					if os.kind ~= "sign" then part = false end
+				end
+				for _, stroke in ipairs( part and o.strokes or {} ) do
+					local b = bbox( { stroke } )
+					if b.size > CENTRAL_PART * ring.r or b.minx > core.maxx + m or b.maxx < core.minx - m
+						or b.miny > core.maxy + m or b.maxy < core.miny - m then part = false end
+				end
+				if part then
+					o.taken = true
+					for _, stroke in ipairs( o.strokes ) do g.strokes[#g.strokes + 1] = stroke end
+				end
+			end
+		end
+	end
+	local kept_groups = {}
+	for _, g in ipairs( groups ) do
+		if not g.taken then kept_groups[#kept_groups + 1] = g end
+	end
+	groups = kept_groups
 	for _, group in ipairs( decorations ) do groups[#groups + 1] = group end
 	-- segment() forgives individual short marks, but many such marks must not disappear together and leave
 	-- an otherwise convincing sigil behind. Count ink that none of the chosen groups explains.
