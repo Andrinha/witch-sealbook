@@ -7,7 +7,9 @@ A [Noita](https://noitagame.com/) mod where magic works as in *Witch Hat Atelier
 Open the spellbook (default key **B**), draw a seal with the mouse — a **ring**, an **element sigil** in the middle and
 **signs** around it — and cast it by clicking with the book in hand. The drawing is read like a small program: the
 sigil picks the element, the signs shape it into a shot, a wave, an orb, rain, a field or a ring of lights, and make it
-push, pull, bind, reflect or follow enemies.
+push, pull, bind, reflect or follow enemies. Sigils, forms and signs combine into more than 5,000 different seals.
+
+![The Spellbook in game](docs/spellbook.gif)
 
 - 127 seals from the manga and the wiki in the Grimoire, learned from seal sheets found in the world or by drawing them
 - seven inks that change how a seal behaves
