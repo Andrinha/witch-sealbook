@@ -1,6 +1,6 @@
 # The Witch's Sealbook
 
-A [Noita](https://noitagame.com/) mod where magic works as in *Witch Hat Atelier*: you don't pick spells, you **draw** them.
+A [Noita](https://noitagame.com/) mod: draw magic seals by hand and cast them, as in *Witch Hat Atelier*.
 
 ![The Spellbook](workshop_preview_image.png)
 

@@ -1,6 +1,26 @@
 <Mod
 	name="The Witch's Sealbook"
-	description="Draw magic seals with ink in a spellbook, collect seal sheets, and cast what you create. Fan-made magic inspired by Witch Hat Atelier."
+	description="[h1]The Witch's Sealbook[/h1]
+Draw magic seals by hand and cast them, as in [i]Witch Hat Atelier[/i].
+
+[img]https://raw.githubusercontent.com/Andrinha/witch-sealbook/main/docs/spellbook.gif[/img]
+
+[h2]How it works[/h2]
+Open the spellbook and draw a seal: a [b]ring[/b], an [b]element sigil[/b] in the middle and [b]signs[/b] around it. Signs decide what the magic becomes: a shot, a wave, an orb, rain, a field. Together they make [b]over 5,000 seals[/b]. Hold the book and click to cast.
+
+[img]https://raw.githubusercontent.com/Andrinha/witch-sealbook/main/docs/flame_shot.gif[/img]
+
+[h2]Features[/h2]
+[list]
+[*][b]127 seals[/b] from the manga, learned from sheets found in the world
+[*][b]Seven inks[/b] that change how a seal behaves
+[*][b]Three books[/b], from a small Palm Quire to the Great Tome
+[/list]
+
+[h2]Notes[/h2]
+Draw slowly and close the ring. Hover over a seal to see what it does.
+Unofficial fan mod. Bug reports are welcome: please say which seal you drew.
+[url=https://github.com/Andrinha/witch-sealbook]Source code[/url]"
 	tags="gameplay,spells,items,alchemy"
 	dont_upload_folders="docs|tests|tools|.idea|.git"
 	dont_upload_files="PLAN.md|WORKSHOP_RELEASE.md"
