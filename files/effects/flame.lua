@@ -107,6 +107,37 @@ local function helix_point( p, t )
 		p.oy + p.dy * along + p.dx * across - 12.5 * t * t, phase
 end
 
+-- A helix particle of a held cast burns the creatures it passes through. The pause between hits is kept on the
+-- creature, so the many particles of one stream hurt it as the straight column does (burn), not once each.
+local function ember_burn( p, x, y )
+	local frame = GameGetFrameNum()
+	for _, id in ipairs( creatures_in( x, y, 24, p.owner, true ) ) do
+		local ex, ey = EntityGetTransform( id )
+		local box = EntityGetFirstComponent( id, "HitboxComponent" )
+		local padding = 3
+		if box then
+			local x0, x1 = ComponentGetValue2( box, "aabb_min_x" ), ComponentGetValue2( box, "aabb_max_x" )
+			local y0, y1 = ComponentGetValue2( box, "aabb_min_y" ), ComponentGetValue2( box, "aabb_max_y" )
+			ex, ey = ex + ( x0 + x1 ) / 2, ey + ( y0 + y1 ) / 2
+			padding = math.min( 20, math.max( padding, ( x1 - x0 ) / 2, ( y1 - y0 ) / 2 ) )
+		end
+		if ( ex - x ) ^ 2 + ( ey - y ) ^ 2 <= ( padding + 4 ) ^ 2 then
+			local last
+			for _, comp in ipairs( EntityGetComponent( id, "VariableStorageComponent" ) or {} ) do
+				if ComponentGetValue2( comp, "name" ) == "witch_spiral_hit" then last = comp; break end
+			end
+			if not last or frame >= ComponentGetValue2( last, "value_int" ) + 6 then
+				seal_damage( id, 0.12 * ( p.power or 1 ), "DAMAGE_FIRE", p.owner, x, y )
+				if last then ComponentSetValue2( last, "value_int", frame )
+				else
+					give_effect( id, DICTIONARY_LOOKS.fire.status )
+					EntityAddComponent2( id, "VariableStorageComponent", { name = "witch_spiral_hit", value_int = frame } )
+				end
+			end
+		end
+	end
+end
+
 local function helix_ember( e, p, age, x, y )
 	if age >= p.frames then EntityKill( e ); return end
 	local nx, ny, phase, hit
@@ -132,6 +163,7 @@ local function helix_ember( e, p, age, x, y )
 	end
 	EntitySetTransform( e, nx, ny )
 	if hit then EntityKill( e ); return end
+	ember_burn( p, nx, ny )
 	local plume = fire_plume( e, nx, ny, "witch_spiraling_particle_fire",
 		"mods/witch_notebook/files/entities/spiraling_particle_fire.xml" )
 	local depth = ( math.cos( phase ) + 1 ) / 2
@@ -154,8 +186,8 @@ local function helix_ember( e, p, age, x, y )
 end
 
 -- Sparse ignition carriers move independently from the nozzle and survive its
--- release. They supply grid fire along the moving plume; damage is native fire,
--- as for Pyreball, without an invisible beam that could keep burning in water.
+-- release. They supply grid fire along the moving plume and burn what they pass
+-- (ember_burn); walls and liquids stop them, so nothing burns through water.
 local function ember( e, p, age, x, y )
 	if p.turns then helix_ember( e, p, age, x, y ); return end
 	if age >= p.frames then EntityKill( e ); return end

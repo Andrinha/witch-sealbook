@@ -299,7 +299,7 @@ function compile_spell( seal )
 	if named then
 		spell.named = named
 		-- a faithful drawing of a known seal is a clean one, however many signs it has
-		spell.precision = round2( math.max( spell.precision, seal_canon_precision( distance ) ) )
+		if distance then spell.precision = round2( math.max( spell.precision, seal_canon_precision( distance ) ) ) end
 		local entry = GRIMOIRE_BY_KEY and GRIMOIRE_BY_KEY[named]
 		if entry and entry.manifest then spell.manifest = entry.manifest end
 		if entry and entry.forbidden then spell.forbidden = true end

@@ -155,7 +155,7 @@ class SpiralingFlame(unittest.TestCase):
         self.assertLess(get("gravity")[1], 0)
         self.assertGreater(get("area_circle_radius")[1], 0)
         self.assertTrue(get("fade_based_on_lifetime"))
-        # The mock does not simulate material damage; there must be no separate beam aura.
+        # no enemy near the flow: nothing is hurt
         self.assertFalse(list(lua.eval("W.hits").values()))
         light = list(lua.eval("EntityGetComponent")(effect, "LightComponent").values())[-1]
         self.assertEqual(lua.eval("ComponentGetValue2")(light, "radius"), 80)
@@ -256,7 +256,14 @@ class SpiralingFlame(unittest.TestCase):
         effect = book_cast(lua)
         lua.execute("simulate(90)")
         self.assertGreater(lua.eval("W.real_fire"), 0)
-        self.assertFalse(list(lua.eval("W.hits").values()))
+        # the flame burns the enemy before the wall, at most once per six frames, and none behind it or off its path
+        hits = [(h["id"], h["frame"]) for h in lua.eval("W.hits").values()]
+        first = lua.eval("ENEMIES[1]")
+        self.assertTrue(hits)
+        self.assertEqual({who for who, _ in hits}, {first})
+        frames = sorted(frame for _, frame in hits)
+        self.assertTrue(all(b - a >= 6 for a, b in zip(frames, frames[1:])))
+        self.assertTrue(all(h["kind"] == "DAMAGE_FIRE" for h in lua.eval("W.hits").values()))
         _, emitter = stream_emitter(lua, effect)
         self.assertTrue(lua.eval("ComponentGetValue2")(emitter, "collide_with_grid"))
         lua.execute('''

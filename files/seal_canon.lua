@@ -406,8 +406,40 @@ function seal_middle( strokes, entry )
 	return first
 end
 
--- The wiki's seal a read drawing is (its key), or nil
-function seal_name( seal )
+-- The one wiki's page whose symbols (as it reads, or as it is drawn of) are exactly a reading's, or nil: a seal of the
+-- page's symbols laid out its own way (Pyreball's signs on the axes instead of the diagonals) is far from the page in
+-- shape, but no other page has those symbols. A few symbols say little: a lone sword sigil is not yet Raincleaver
+local SYMBOLS_PAGE_SIGNS = 3
+local pages_by_symbols
+local function symbols_page( symbols )
+	if not GRIMOIRE then return nil end
+	local signs = 0
+	for _, s in ipairs( symbols or {} ) do
+		if s.kind == "sign" then signs = signs + 1 end
+	end
+	if signs < SYMBOLS_PAGE_SIGNS then return nil end
+	if not pages_by_symbols then
+		pages_by_symbols = {}
+		for _, entry in ipairs( GRIMOIRE ) do
+			for _, signature in ipairs( { entry.symbols or "", entry.recipe or "" } ) do
+				if signature ~= "" then
+					local list = pages_by_symbols[signature] or {}
+					pages_by_symbols[signature] = list
+					-- a seal drawn twice in the wiki is the same seal
+					if not list[entry.name] then list[entry.name] = entry.key; list.count = ( list.count or 0 ) + 1 end
+				end
+			end
+		end
+	end
+	local list = pages_by_symbols[seal_symbols_key( symbols )]
+	if not list or list.count ~= 1 then return nil end
+	for name, key in pairs( list ) do
+		if name ~= "count" then return key end
+	end
+end
+
+-- The wiki's seal a read drawing is by its shape, and how far it is from it
+local function seal_shape_name( seal )
 	local key, distance, second = seal_canonical( seal )
 	local entry = key and GRIMOIRE_BY_KEY and GRIMOIRE_BY_KEY[key]
 	if not entry then return nil end
@@ -426,4 +458,12 @@ function seal_name( seal )
 		if not element then return page.key, distance end
 	end
 	return nil
+end
+
+-- The wiki's seal a read drawing is (its key) and how far it is from the page in shape (nil when it is that seal by
+-- its symbols alone), or nil
+function seal_name( seal )
+	local key, distance = seal_shape_name( seal )
+	if key then return key, distance end
+	return symbols_page( seal.symbols )
 end

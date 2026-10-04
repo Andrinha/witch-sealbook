@@ -10,6 +10,7 @@ local ITERATIONS = 14     -- pressure solve
 local IGNITE = 70         -- frames the heat takes to cross the seal, top left to bottom right
 local WAVE_X, WAVE_Y = math.cos( math.rad( 20 ) ), math.sin( math.rad( 20 ) ) -- the wave's way, 20 degrees below the right
 local FRONT = 0.18        -- width of the wave's glowing front (share of the seal's width)
+local SPARK_SHADOW = 0.6  -- how far a spark's shadow falls, down and to the right (page units)
 local SOURCES_END = 130   -- the sigil breathes until then
 local FADE_START = 165
 local LENGTH = 205        -- the whole show, about 3.4 s
@@ -350,15 +351,15 @@ function awaken_draw( a, s, z )
 		end
 	end
 
-	-- sparks, cooling as they fly
-	local rim = { col[1] * 0.35, col[2] * 0.3, col[3] * 0.35 }
+	-- sparks, cooling and shrinking as they fly: square pixels (NOTEBOOK_INK_IMAGE is 2x2) with a small shadow of the
+	-- element's color down and to the right, so a light spark shows on light paper too
+	local shadow = { col[1] * 0.25, col[2] * 0.2, col[3] * 0.25 }
 	for _, sp in ipairs( a.sparks ) do
 		local t = 1 - sp.age / sp.life
-		local kk = ( 2 + 3 * t ) / AWAKEN_GLOW_SIZE
+		local size = 1 + 1.5 * t
+		local x, y, k = sp.x - size / 2, sp.y - size / 2, size / 2
 		local alpha = math.min( 1, t * 1.5 ) * fade
-		-- a dark rim of the element's color under the spark: a light spark shows on light paper too
-		local rk = kk * 1.6
-		s:image( sp.x - half * rk, sp.y - half * rk, img, z - 1, rim, 0.6 * alpha, rk, rk )
-		s:image( sp.x - half * kk, sp.y - half * kk, img, z - 2, hot( 0.4 * t ), alpha, kk, kk )
+		s:image( x + SPARK_SHADOW, y + SPARK_SHADOW, NOTEBOOK_INK_IMAGE, z - 1, shadow, 0.7 * alpha, k, k )
+		s:image( x, y, NOTEBOOK_INK_IMAGE, z - 2, hot( 0.4 * t ), alpha, k, k )
 	end
 end

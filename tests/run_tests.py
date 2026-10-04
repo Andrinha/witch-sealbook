@@ -617,11 +617,17 @@ def test_player_seals(lua):
     ok = True
     for s in json.load(open(path, encoding="utf-8")) if os.path.exists(path) else []:
         strokes = [[tuple(map(float, p.split(","))) for p in st.split()] for st in s["strokes"]]
+        if s.get("named"):  # the wiki's seal it must be named after: only with the grimoire loaded
+            lua.execute(open(os.path.join(MOD, "files", "grimoire.lua"), encoding="utf-8").read())
         got, spell = run(lua, strokes)
+        named = spell and spell["named"]
+        if s.get("named"):
+            lua.execute("GRIMOIRE = nil; GRIMOIRE_BY_KEY = nil")
         have = set(spell["behaviors"].keys()) if spell else set()
         good = (spell is None if s["expected"] == "reject" else got == s["expected"] and set(s["behaviors"]) <= have
-                and not (set(s.get("absent", [])) & have))
-        print(f"  {s['name']:36s} -> {got} {sorted(have)}{'' if good else '   <-- expected ' + s['expected'] + ' ' + str(s['behaviors'])}")
+                and not (set(s.get("absent", [])) & have) and named == s.get("named"))
+        print(f"  {s['name']:36s} -> {got}{' ' + named if named else ''} {sorted(have)}"
+              f"{'' if good else '   <-- expected ' + s['expected'] + ' ' + str(s['behaviors']) + ' ' + str(s.get('named'))}")
         ok &= good
     return ok
 
