@@ -11,6 +11,8 @@ push, pull, bind, reflect or follow enemies. Sigils, forms and signs combine int
 
 ![The Spellbook in game](docs/spellbook.gif)
 
+![Drawing and casting Flame Shot](docs/flame_shot.gif)
+
 - 127 seals from the manga and the wiki in the Grimoire, learned from seal sheets found in the world or by drawing them
 - seven inks that change how a seal behaves
 - three books: the Spellbook, the small Palm Quire and the Great Tome for the biggest seals
