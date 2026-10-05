@@ -77,7 +77,15 @@ local function numbers( spell, how, power )
 		n.radius, n.lasts = base.field_radius * size, life
 		n.dps = main * base.field_damage * tuned.field_damage * ( strong and strong.damage or 1 ) * 60 / base.field_every * HP
 	elseif how.own and ( carrier == "bolt" or carrier == "orb" or carrier == "hover" or how.at == "sky" ) then
-		local life = math.max( 1, ( how.effect.file:find( "/orb_", 1, true ) and base.orb_lifetime or base.bolt_lifetime ) + tuned.lifetime )
+		local splash = how.effect.splash
+		if splash then
+			-- a splash's drops (cast.lua spawn)
+			tuned.lifetime = math.floor( tuned.lifetime * base.splash_reach )
+			tuned.damage, tuned.blast = tuned.damage * base.splash_damage, tuned.blast * base.splash_damage
+		end
+		local own_life = how.effect.file:find( "/orb_", 1, true ) and base.orb_lifetime or splash and base.splash_lifetime
+			or base.bolt_lifetime
+		local life = math.max( 1, own_life + tuned.lifetime )
 		if strong then life = math.floor( life * strong.lifetime ) end
 		if b.still and amount( "still" ) then life = life + amount( "still" ).frames end
 		n.lasts = life
@@ -87,9 +95,10 @@ local function numbers( spell, how, power )
 		local generic = tuned.damage * ( grow and grow.damage or 1 ) * ( shrink and shrink.damage or 1 ) * ( strong and strong.damage or 1 )
 			* ( point and point.damage or 1 )
 		local hit = generic
-		for _, v in pairs( look.damage or {} ) do hit = hit + v end
+		for _, v in pairs( look.damage or {} ) do hit = hit + v * ( splash and base.splash_damage or 1 ) end
 		n.hit = hit * HP
-		if ( look.explode or 0 ) > 0 then n.blast = ( look.explode + tuned.blast ) * size end
+		local blast = splash and math.floor( ( look.explode or 0 ) / 2 ) or look.explode or 0
+		if blast > 0 then n.blast = ( blast + tuned.blast ) * size end
 		n.shots = math.max( how.effect.copies or 1, b.pierce or 0 )
 		local spread = 2 + 20 * ( spell.spread - spell.focus ) + 15 * ( spell.directed and 0 or spell.tilt )
 		if spread >= 1 and carrier ~= "hover" then n.spread = spread end
@@ -139,6 +148,7 @@ local function heading( spell, how )
 		end
 		return text .. " (the game's own spell)"
 	end
+	if how.effect.splash then return "A splash of " .. element .. " from the seal: a few short drops" end
 	if carrier == "bolt" and at ~= "sky" then return "A shot of " .. element .. where( at ) end
 	if carrier == "orb" then return "A slow orb of " .. element .. where( at ) end
 	if carrier == "hover" then return "An orb of " .. element .. where( at ) .. ", and stays" end
@@ -356,6 +366,9 @@ function spell_notes( data, plain )
 		end
 		if #changed > 0 then add( "Changed: " .. table.concat( changed, ", " ), "diff" ) end
 	end
+	-- the stronger the seal, the longer the book waits after it (cast.lua seal_recharge)
+	local recharge = seal_recharge and seal_recharge( spell ) or 0
+	if recharge > 0 then add( "Recharges " .. seconds( recharge ) .. " beyond the book's delay", "diff" ) end
 	local misfire = math.floor( misfire_chance( spell ) + 0.5 )
 	if misfire >= 5 then add( "Misfires " .. misfire .. "% of the casts", "diff" ) end
 	return out

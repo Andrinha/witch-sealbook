@@ -126,7 +126,8 @@ DICTIONARY_CENTER_ORDER = { "fire", "water", "wind", "earth", "light", "crystal"
 --   type: "directional" - points somewhere: pushes the spell towards where it points (unbalanced -> the
 --         spell drifts), two or more turned sideways together spin the spell; "semi" - no direction, but drawn facing
 --         outwards it acts the other way round; "none" - acts the same any way round
---   form: the carrier it votes for (a bolt, a floating orb, a burst outwards); none of them: a field
+--   form: the carrier it votes for (a bolt, a floating orb, a burst outwards); none of them: a splash from the seal;
+--         Dispersion held by a sign that keeps it (Stability, Stillness): a field round the caster (seal_spell.lua)
 --   condense: pulls the element into its condensed variant
 --   behavior: what it adds (DICTIONARY_BEHAVIORS); inverted: the sign drawn facing outwards
 --   hint: what it does, in the book's legend
@@ -383,17 +384,18 @@ end
 
 -- The carriers' own numbers before a seal tunes them (carriers.lua builds them, spell_notes.lua tells them): a shot's
 -- and an orb's life (frames), a field's radius, life, damage (a share of its element's main damage) and how often it
--- strikes (frames)
+-- strikes (frames); a splash's drops: their life, the share of a shot's damage each deals, the share of the seal's
+-- lifetime and range they take (they stay by the seal), how many and how wide they fan out (degrees)
 DICTIONARY_CARRIER_BASE = { bolt_lifetime = 90, orb_lifetime = 240, field_radius = 32, field_lifetime = 180, field_damage = 0.25,
-	field_every = 10 }
+	field_every = 10, splash_lifetime = 14, splash_damage = 0.35, splash_reach = 0.25, splash_drops = 3, splash_pattern = 40 }
 
-DICTIONARY_FORMS = { burst = "in place", column = "column", dispersion = "wave outwards", levitation = "floats", rain = "rain",
-	ring = "in a ring" }
+DICTIONARY_FORMS = { burst = "splash", column = "column", dispersion = "wave outwards", levitation = "floats", rain = "rain",
+	ring = "in a ring", field = "circle around" }
 
 -- How elements manifest. Each element has a look: its own projectiles are built from it by init.lua
 -- (carriers.lua, templates in entities/templates) - a bolt for the column, a slow floating orb for
--- levitation, a field around the caster for a seal without signs, a wave out from the seal for dispersion
--- and a cloud over the target for the Sign of Rain.
+-- levitation, a splash of a few short drops for a seal without a sign of form, a field around the caster for
+-- Dispersion held still, a wave out from the seal for dispersion and a cloud over the target for the Sign of Rain.
 --   material  - what it is made of and leaves behind (real particles); nil: none
 --   spark     - cosmetic sparks in its color
 --   damage    - damage by type, as ProjectileComponent.damage_by_type (1 = 25 hp)
@@ -524,6 +526,12 @@ function dictionary_effect( element, form, floats )
 			return { file = carrier_file( element, "cloud" ), carrier = "cloud", at = "target", text = "rain over the target: " .. name }
 		end
 		return { file = carrier_file( element, "bolt" ), carrier = "cloud", at = "sky", copies = 7, pattern = 40, text = "rain of projectiles: " .. name }
+	elseif form == "field" then
+		return { file = carrier_file( element, "field" ), carrier = "field", at = "self", text = "field around: " .. name }
 	end
-	return { file = carrier_file( element, "field" ), carrier = "field", at = "self", text = "field around: " .. name }
+	-- a sigil without a sign of form only splashes its element from the seal, as a first seal does in the manga: a few
+	-- short, weak drops - shots that stay by the seal, taking what shots take
+	local base = DICTIONARY_CARRIER_BASE
+	return { file = carrier_file( element, "splash" ), carrier = "bolt", splash = true, copies = base.splash_drops,
+		pattern = base.splash_pattern, text = "splash: " .. name }
 end

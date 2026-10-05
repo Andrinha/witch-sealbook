@@ -464,8 +464,11 @@ local function symbols_page( seal )
 		if s.kind == "sign" then signs = signs + 1 end
 	end
 	if signs >= SYMBOLS_PAGE_SIGNS then return key end
+	-- a lone sigil is every plain seal of that sigil: it names the page only when drawn as the page is, not when it is
+	-- merely nearer to it than to any other page
+	local lone = #( seal.symbols or {} ) <= 1
 	local distance = page_distance( seal, key )
-	if distance and distance <= CANON_MATCH then return key, distance end
+	if distance and distance <= ( lone and CANON_WHOLE or CANON_MATCH ) then return key, distance end
 	return nil
 end
 

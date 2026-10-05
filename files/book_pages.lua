@@ -35,6 +35,7 @@ function P.paper_color( key ) return paper_of( sigil_icon_color( key ) ) end
 
 -- A stroke's color on paper: its ink's; 'element_color' replaces the conjuring ink's (the grimoire's pages, a wrong seal)
 local function stroke_look( stroke, element_color, ink_key )
+	if stroke.trouble then return P.ERROR_COLOR, 1 end -- what the book couldn't read (notebook.lua finish_sigil)
 	local ink = INK_BY_KEY[ink_key or stroke.ink or "ink"]
 	if not ink or ink.key == "ink" then return element_color or P.INK_COLOR, 1 end
 	return ink.color, ink.alpha or 1
@@ -136,7 +137,8 @@ local function hint_pages()
 	hints = {
 		{ sketch = "howto" },
 		{ sketch = "elements", rows = elements },
-		{ sketch = "list", kind = "sign", title = "Signs around the sigil", subtitle = "inside the ring, pointing to its middle", rows = basic },
+		{ sketch = "list", kind = "sign", title = "Signs around the sigil", subtitle = "inside the ring, pointing to its middle", rows = basic,
+			footer = "Dispersion + Stability: a field around you" },
 		{ sketch = "list", kind = "sign", title = "More signs", rows = more1 },
 		{ sketch = "list", kind = "sign", title = "More signs", rows = more2 },
 		{ sketch = "margin" },
@@ -228,37 +230,47 @@ local function sparkle( cx, cy, r, out )
 	return out
 end
 
--- How to draw a seal, in four sketches: a ring with a gap, a sigil inside, signs around facing in, the ring closed
+-- How to draw a seal, in four sketches: a sigil in the middle, signs around facing in, the ring drawn last round them, the
+-- ring closed. The ring wakes the seal the moment it closes, so it comes last (a ring drawn first and closed wakes empty:
+-- the shockwave). Where the ring will go is dotted in the first two.
 local function howto_page( s )
 	heading( s, 6, "How to draw a seal", P.TITLE_COLOR )
 	local fire = TEMPLATES_SIGILS.fire[1]
 	local sign = TEMPLATES_SIGNS.levitation[1]
 	local fire_color = P.paper_color( "fire" )
 	local cells = { { 46, 48 }, { 134, 48 }, { 46, 116 }, { 134, 116 } }
-	local notes = { { "a ring with", "a gap" }, { "a sigil", "inside" }, { "signs around,", "facing in" }, { "close the ring:", "it wakes!" } }
-	local R, GAP = 19, 0.55
+	local notes = { { "a sigil in", "the middle" }, { "signs around,", "facing in" }, { "the ring last,", "round them" },
+		{ "close the ring:", "it wakes!" } }
+	local R, OPEN = 19, 1.1 -- the third sketch's ring stops this short of closing (radians)
+	local START = -math.pi / 2 + 0.35
 	for i, c in ipairs( cells ) do
 		local x, y = c[1], c[2]
-		local ink = {}
-		if i < 4 then arc( x, y, R, -math.pi / 2 + GAP / 2, 3 * math.pi / 2 - GAP / 2, ink )
-		else arc( x, y, R, 0, 2 * math.pi, ink ) end
-		if i >= 3 then
-			for k = 0, 3 do
-				local a = math.pi / 4 + k * math.pi / 2
-				template_strokes( sign, x + math.cos( a ) * 12.5, y + math.sin( a ) * 12.5, 7, a - math.pi / 2, ink )
-			end
-		end
-		sketch( s, ink, P.INK_COLOR )
-		if i >= 2 then sketch( s, template_strokes( fire, x, y, 11 ), fire_color ) end
-		local marks = {}
-		if i == 1 then arrow( x + 24, y - 22, x + 7, y - R + 1, marks ) end
-		if i == 4 then
+		local ink, dots, marks = {}, {}, {}
+		if i <= 2 then
+			for k = 0, 17 do arc( x, y, R, k * math.pi / 9, k * math.pi / 9 + 0.12, dots ) end
+		elseif i == 3 then
+			arc( x, y, R, START, START + 2 * math.pi - OPEN, ink )
+			-- the pen goes on round to where it began
+			local a = START + 2 * math.pi - OPEN + 0.25
+			arrow( x + math.cos( a ) * ( R + 5 ), y + math.sin( a ) * ( R + 5 ), x + math.cos( START - 0.2 ) * ( R + 5 ),
+				y + math.sin( START - 0.2 ) * ( R + 5 ), marks )
+		else
+			arc( x, y, R, 0, 2 * math.pi, ink )
 			for k = 0, 7 do
 				local a = k * math.pi / 4 + math.pi / 8
 				marks[#marks + 1] = { { x = x + math.cos( a ) * ( R + 3 ), y = y + math.sin( a ) * ( R + 3 ) },
 					{ x = x + math.cos( a ) * ( R + 7 ), y = y + math.sin( a ) * ( R + 7 ) } }
 			end
 		end
+		if i >= 2 then
+			for k = 0, 3 do
+				local a = math.pi / 4 + k * math.pi / 2
+				template_strokes( sign, x + math.cos( a ) * 12.5, y + math.sin( a ) * 12.5, 7, a - math.pi / 2, ink )
+			end
+		end
+		if #dots > 0 then sketch( s, dots, P.NOTE_COLOR ) end
+		sketch( s, ink, P.INK_COLOR )
+		sketch( s, template_strokes( fire, x, y, 11 ), fire_color )
 		if #marks > 0 then sketch( s, marks, i == 4 and P.GOLD_INK or P.NOTE_COLOR ) end
 		s:text( x - 38, y - 26, tostring( i ) .. ".", P.TITLE_COLOR )
 		note( s, x, y + R + 3, notes[i][1], P.TEXT_COLOR )
@@ -295,6 +307,7 @@ local function list_page( s, page )
 		s:text( tx, y - ( row.note and 9 or 4 ), D.fitted( row.name, room ), P.TEXT_COLOR )
 		if row.note then s:text( tx, y, D.fitted( row.note, room ), P.NOTE_COLOR ) end
 	end
+	if page.footer then note( s, size / 2, 157, page.footer, P.NOTE_COLOR ) end
 end
 
 -- The element sigils, each drawn big in its color, its name under it

@@ -312,8 +312,11 @@ function sheet_shop_item( x, y, cheap, shelf )
 	if Random( 1, 100 ) <= SHOP_INK_CHANCE then
 		local ink = "ink"
 		if tier >= 3 and Random( 1, 100 ) <= SHOP_DYED_CHANCE then ink = SHOP_FLASKS[Random( 1, #SHOP_FLASKS )] end
-		middle = shelf - 4
-		e = EntityLoad( ink_flask_entity( ink ), x, middle - 1 )
+		middle = shelf - math.ceil( INK_SHOP_H / 2 )
+		local def = INK_BY_KEY[ink]
+		e = shop_stand( ink_flask_entity( ink ), x, middle, ink_shop_image( ink ), INK_SHOP_W, INK_SHOP_H, "Flask of " .. def.name,
+			def.text )
+		shop_stand_set( e, "witch_shop_ink", ink )
 		price = ink == "ink" and ( 100 + 20 * math.max( 0, math.floor( y / 512 ) ) ) or ( 120 + 40 * tier )
 	else
 		local row = sheet_pick( tier, false )

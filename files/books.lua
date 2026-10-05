@@ -10,6 +10,7 @@
 -- A wiki seal needs a book big enough for it (grimoire.lua 'book', from how intricate its drawing is: make_grimoire.py).
 
 dofile_once( "mods/witch_notebook/files/shop.lua" )
+dofile_once( "mods/witch_notebook/files/book_key.lua" )
 
 BOOK_ENTITIES = "mods/witch_notebook/files/entities/"
 BOOK_SPRITES = "mods/witch_notebook/files/gfx/"
@@ -22,15 +23,16 @@ SHEETS_WAITING_VAR = "witch_notebook.waiting_sheets" -- ... and those that no bo
 BOOKS_AT_SPAWN_SETTING = "witch_notebook.books_at_spawn"
 TEST_BOOK_AT_SPAWN_SETTING = "witch_notebook.test_book_at_spawn"
 
--- key, name, size (a book holds the seals of its size and smaller), the item's entity and icon, what it is ('about',
--- and 'found': said when the witch first picks it up), the delay between casts (frames); how it lies open
--- (notebook.lua, book_gfx.lua): the page's size, round pages, from the hinge to a page, the cover around the pages,
--- strips a turning sheet is cut into, its images' prefix, frames a sheet takes to turn, pages before the seals, how
--- much smaller a sheet pasted in shows its seal
+-- key, name, size (a book holds the seals of its size and smaller), the item's entity, icon and picture in the world
+-- (and its size), what it is ('about', and 'found': said when the witch first picks it up), the delay between casts
+-- (frames); how it lies open (notebook.lua, book_gfx.lua): the page's size, round pages, from the hinge to a page, the
+-- cover around the pages, strips a turning sheet is cut into, its images' prefix, frames a sheet takes to turn, pages
+-- before the seals, how much smaller a sheet pasted in shows its seal
 BOOKS = {
 	quire = {
 		key = "quire", name = "Palm Quire", size = 1,
 		entity = BOOK_ENTITIES .. "palm_quire.xml", icon = BOOK_SPRITES .. "palm_quire_icon.png",
+		image = BOOK_SPRITES .. "palm_quire.png", image_size = { 9, 12 },
 		about = "A round notepad strapped to the hand: small seals only, but it casts quickly.",
 		found = "Small seals, cast quickly - %s to open it",
 		cast_delay = 18,
@@ -40,6 +42,7 @@ BOOKS = {
 	book = {
 		key = "book", name = "Spellbook", size = 2,
 		entity = BOOK_ENTITIES .. "spellbook.xml", icon = BOOK_SPRITES .. "spellbook_icon.png",
+		image = BOOK_SPRITES .. "spellbook.png", image_size = { 8, 10 },
 		about = "The witch's sketchbook of seals.",
 		found = "%s to open it and draw a seal",
 		cast_delay = 30,
@@ -49,6 +52,7 @@ BOOKS = {
 	tome = {
 		key = "tome", name = "Great Tome", size = 3,
 		entity = BOOK_ENTITIES .. "great_tome.xml", icon = BOOK_SPRITES .. "great_tome_icon.png",
+		image = BOOK_SPRITES .. "great_tome.png", image_size = { 12, 14 },
 		about = "A copy from the Tower of Tomes: its pages hold the grandest seals. Heavy - it casts slowly.",
 		found = "Its pages hold the grandest seals - %s to open it",
 		cast_delay = 48,
@@ -146,6 +150,12 @@ local function owned_flag( key ) return "witch_notebook_has_" .. key end
 function book_owned( key )
 	return GameHasFlagRun( owned_flag( key ) ) or ( key == "book" and GameHasFlagRun( "witch_notebook_spellbook" ) )
 end
+-- A book picked up (book_pickup.lua) or bought (shop_stand_pickup.lua): the first time in the run it becomes theirs
+function book_first_pickup( key, who )
+	if not EntityHasTag( who, "player_unit" ) or book_owned( key ) then return end
+	book_set_owned( key )
+	GamePrintImportant( BOOKS[key].name, string.format( BOOKS[key].found, book_open_key_hint() ) )
+end
 function book_set_owned( key )
 	GameAddFlagRun( owned_flag( key ) )
 	-- the sheets that waited for a book big enough are pasted in (notebook.lua)
@@ -225,8 +235,10 @@ end
 -- where the shop's cards have theirs, 28 over the shelf
 function book_shop_item( key, x, y, tier, cheap, shelf )
 	shelf = shelf or ( y + 11 )
-	local middle = shelf - 6
-	local e = EntityLoad( BOOKS[key].entity, x, middle )
+	local def = BOOKS[key]
+	local middle = shelf - math.ceil( def.image_size[2] / 2 )
+	local e = shop_stand( def.entity, x, middle, def.image, def.image_size[1], def.image_size[2], def.name, def.about )
+	shop_stand_set( e, "witch_shop_book", key )
 	local price = SHOP[key].price( tier )
 	if cheap then
 		price = price * 0.5

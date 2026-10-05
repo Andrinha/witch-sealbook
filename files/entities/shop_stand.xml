@@ -1,0 +1,9 @@
+<Entity tags="teleportable_NOT,item_pickup,witch_shop_stand">
+	<!-- A flask or a book for sale in the Holy Mountain (shop.lua shop_stand): its picture, the price and the name are
+	     added by the script. It has no body: it can't roll, break or be kicked out of the shop. Bought, it becomes the
+	     thing itself in the witch's hands (shop_stand_pickup.lua). -->
+
+	<LuaComponent
+		script_item_picked_up="mods/witch_notebook/files/shop_stand_pickup.lua"
+	></LuaComponent>
+</Entity>

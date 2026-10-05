@@ -12,6 +12,8 @@ Usage (from the mod folder, needs: pip install lupa pillow):
     python tests/debug_sigil.py --source path   # another world_state.xml to read from
     python tests/debug_sigil.py --keep "wind with turned columns" wind:column spin
     python tests/debug_sigil.py --keep "false sigil" reject
+    python tests/debug_sigil.py --keep "plain wind" wind:burst --named none
+                                                # ... and the wiki's seal it must (or, 'none', must not) be named after
                                                 # keep the drawing as a test (tests/data/player_seals.json):
                                                 # what it must give (or reject) and the behaviors it must have
 """
@@ -96,6 +98,8 @@ def load_lua():
                 src = src.replace("local function " + name, "function " + name)
             src += SEAL_DEBUG
         lua.execute(src)
+    # the wiki's pages too: a drawing is named after one of them, as in the game
+    lua.execute(open(os.path.join(t.MOD, "files", "grimoire.lua"), encoding="utf-8").read())
     return lua
 
 
@@ -160,6 +164,7 @@ def main():
     ap.add_argument("--png")
     ap.add_argument("--source")
     ap.add_argument("--keep", nargs="+", metavar=("NAME", "EXPECTED"), help="name, element:form, behaviors...")
+    ap.add_argument("--named", metavar="KEY", help="with --keep: the wiki's seal it must be named after; 'none': after no seal")
     args = ap.parse_args()
     records = load(args.source)
     if not records:
@@ -179,6 +184,9 @@ def main():
         name, expected, behaviors = args.keep[0], args.keep[1], args.keep[2:]
         kept.append({"name": name, "expected": expected, "behaviors": behaviors,
                      "strokes": [" ".join(f"{x:.1f},{y:.1f}" for x, y in st) for st in rec["strokes"]]})
+        if args.named:
+            kept[-1]["named"] = None if args.named == "none" else args.named
+            kept[-1]["grimoire"] = True
         json.dump(kept, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
         print(f"  kept as a test: '{name}' -> {expected} {behaviors} ({len(kept)} in {path})")
 

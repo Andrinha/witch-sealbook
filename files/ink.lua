@@ -147,6 +147,10 @@ function ink_flask_entity( key )
 	return "mods/witch_notebook/files/entities/potion_ink_" .. key .. ".xml"
 end
 
+-- the picture of a flask of the ink standing for sale in a shop (drawn at init in book_gfx.lua, shown by shop.lua)
+INK_SHOP_W, INK_SHOP_H = 9, 11
+function ink_shop_image( key ) return "mods/witch_notebook/files/gfx/shop_flask_" .. key .. ".png" end
+
 function ink_create_flasks()
 	local flask = ModTextFileGetContent( FLASK_ENTITY )
 	for _, ink in ipairs( INKS ) do

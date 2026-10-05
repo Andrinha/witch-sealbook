@@ -68,6 +68,10 @@ function book_dogear_image( def, right ) return BOOK_GFX .. def.gfx .. ( right a
 function book_fill_image( level ) return BOOK_GFX .. "bottle_fill_" .. level .. ".png" end
 function book_digit_image( d ) return BOOK_GFX .. "digit_" .. d .. ".png" end
 BOOK_BOTTLE_IMAGE = BOOK_GFX .. "bottle.png"
+-- the bar over the witch's head while a book recharges (notebook.lua show_recharge): a frame round BOOK_RECHARGE_W
+-- pixels, and the fill of them that shrinks as it recharges
+BOOK_RECHARGE_W = 16
+BOOK_RECHARGE_FRAME, BOOK_RECHARGE_FILL = BOOK_GFX .. "recharge_frame.png", BOOK_GFX .. "recharge_fill.png"
 BOOK_GLOW_IMAGE = BOOK_GFX .. "glow.png"
 BOOK_SHADE_IMAGE = BOOK_GFX .. "shade.png"     -- 16 x 1, opaque on the left fading to the right
 BOOK_SHADE_R_IMAGE = BOOK_GFX .. "shade_r.png" -- ... fading to the left
@@ -872,6 +876,44 @@ local function create_bottles()
 	end
 end
 
+-- The recharge bar: the game's reload bar in small - its frame and dark see-through inside, its orange fill
+local function create_recharge_bars()
+	make_image( BOOK_RECHARGE_FRAME, BOOK_RECHARGE_W + 2, 3, function( x, y )
+		if x == 0 or y == 0 or x == BOOK_RECHARGE_W + 1 or y == 2 then return 103, 60, 48 end
+		return 86, 50, 40, 200
+	end )
+	make_image( BOOK_RECHARGE_FILL, BOOK_RECHARGE_W, 1, function() return 252, 138, 67 end )
+end
+
+-- A small flask of each ink standing for sale in a shop (ink.lua ink_shop_image, shop.lua shop_stand): a cork, a narrow
+-- neck and a round belly full of the ink, a glint on the glass
+local function shop_flask_inside( x, y )
+	if y >= 1 and y <= 3 then return x == 4 end -- the neck
+	return ( ( x - 4 ) / 3.3 ) ^ 2 + ( ( y - 6.6 ) / 3.3 ) ^ 2 <= 1
+end
+local function create_shop_flasks()
+	for _, ink in ipairs( INKS or {} ) do
+		local c, alpha = ink.liquid, 255 * ( ink.alpha or 1 )
+		make_image( ink_shop_image( ink.key ), INK_SHOP_W, INK_SHOP_H, function( x, y )
+			local inside = shop_flask_inside( x, y )
+			if y == 0 then
+				if x >= 3 and x <= 5 then return 150, 102, 62 end -- the cork
+				return nil
+			end
+			if not inside then
+				for _, d in ipairs( { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } } ) do
+					if shop_flask_inside( x + d[1], y + d[2] ) then return 60, 54, 70 end -- the glass's outline
+				end
+				return nil
+			end
+			if y <= 3 then return 220, 230, 255, 90 end -- the empty neck
+			if ( x == 2 and y == 5 ) or ( x == 3 and y == 4 ) then return 255, 255, 255, 220 end -- the glint
+			local shade = 1 - 0.07 * math.max( 0, x - 4 ) - 0.06 * math.max( 0, y - 7 )
+			return c[1] * shade, c[2] * shade, c[3] * shade, math.max( alpha, 120 )
+		end )
+	end
+end
+
 -- a soft round glow, soft shadow ramps (along x and along y), the motes, the flourish under titles
 local function create_soft()
 	make_image( BOOK_GLOW_IMAGE, 25, 25, function( x, y )
@@ -1079,6 +1121,8 @@ function book_gfx_create()
 		end
 	end
 	create_bottles()
+	create_shop_flasks()
+	create_recharge_bars()
 	create_soft()
 	create_glyphs()
 	create_digits()

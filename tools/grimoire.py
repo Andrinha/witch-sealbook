@@ -603,7 +603,7 @@ SPELLS = [
       effect="A cloak puppet darts about in the air at the target: enemies chase it, light items around fly up."),
     S("grasping_wind", "Grasping Wind", "Grasping Wind", "Grasping Wind", "Grasping_Wind_Redraw.png", WIND,
       [sig("wind", 0, 0, 0.5)] + around("pull", D4, 0.72, 0.3),
-      expect={"element": "wind", "behaviors": {"pull"}},
+      expect={"element": "wind", "behaviors": {"pull"}}, cast={"form": "field"},  # a whirl round the witch, not a splash
       effect="A whirlwind draws items, gold and enemies to the witch. The angled pulling signs twist it into a funnel."),
     S("river_ferry", "River Ferry", "River Ferry Seal", "River Ferry Seal", "River_Ferry_Seal_Redraw.png", WIND,
       [sig("wind", 0, 0, 0.3)] + around("levitation", [270, 330, 30, 90, 150, 210], 0.72, 0.3) + around("stability", [300, 0, 60, 120, 180, 240], 0.78, 0.16),

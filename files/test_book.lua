@@ -4,7 +4,7 @@
 -- signs round them, a frame - is compiled into the page's spell (compile_spell), and drawn from the templates
 -- (templates.lua). A click on a page makes it the book's active seal (notebook.lua). The pages, in groups:
 --   Sigils, Condensed, Mixes - every element (its sigil; a sigil with Convergence; two sigils mixed) in every form:
---       Field (no sign of form), Column, Wave (Dispersion), Orb (Levitation with smaller columns: it flies), Hanging
+--       Splash (no sign of form), Field (Dispersion and Stability), Column, Wave (Dispersion), Orb (Levitation with smaller columns: it flies), Hanging
 --       (Levitation alone), Rain (the Sign of Rain round the sigil), Ring (Regions pointing in and out); first plain,
 --       then with a pair of each other sign - the pairs tests/test_sign_effects.py checks
 --   Special, Frames, Creatures - every special sigil, frame and decorative sigil: alone, with each element sigil, and
@@ -35,7 +35,9 @@ local PAIRS = { { 90, 270 }, { 0, 180 }, { 45, 225 }, { 135, 315 } }
 -- with it = this sign's size then } }; 'pairs': the pairs the other signs take, in order; 'sigil', 'dist': the sigil's
 -- size and the signs' distance, if not the usual
 local FORMS = {
-	{ name = "Field" },
+	{ name = "Splash" },
+	-- Dispersion held by Stability: the field round the caster
+	{ name = "Field", signs = { { "dispersion", 1 }, { "stability", 2 } } },
 	{ name = "Column", signs = { { "column", 1 } } },
 	{ name = "Wave", signs = { { "dispersion", 1 } } },
 	-- Levitation with columns smaller than it: the orb takes Levitation's form but flies (with the Orb sign, which is

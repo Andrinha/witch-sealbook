@@ -305,7 +305,8 @@ class LightSpells(unittest.TestCase):
                 e = made[1]
             self.assertEqual(made[1], e)
             self.assertEqual(lua.eval("effect_params")(e)["focus"], target)
-            lua.execute("simulate(BOOKS.book.cast_delay)")
+            # the seal recharges by its tier (cast.lua seal_cast_delay)
+            lua.execute('simulate( seal_cast_delay( BOOKS.book, parse_spell_data( GlobalsGetValue( book_var( "book", "active_spell" ) ) ) ) )')
         self.assertFalse(list(lua.eval("W.errors").values()))
 
     def test_tracer_respects_fragment_lineage_and_empty_aim(self):

@@ -1,6 +1,6 @@
 -- Builds the seal projectiles ("carriers") of every element from its look in dictionary.lua: for each
--- element a bolt (column), a slow orb (levitation), a field (a seal without signs) and, with a
--- material, a cloud (dispersion). Called from init.lua: virtual files and images can only be made
+-- element a bolt (column), a slow orb (levitation), a splash's short weak drop (a seal without a sign of form), a
+-- field (Dispersion held still) and, with a material, a cloud (the Sign of Rain). Called from init.lua: virtual files and images can only be made
 -- during mod init. Templates: entities/templates/bolt.xml and field.xml, the cloud is the game's.
 
 local TEMPLATES = "mods/witch_notebook/files/entities/templates/"
@@ -109,6 +109,16 @@ function carriers_create()
 			lifetime = BASE.orb_lifetime, die_on_low_velocity = 0, sprite = orb_sprite, sprite_offset = 4,
 			trail_count = 3, trail_interval = 1, light_radius = 70,
 		} ) ), key, true ) )
+		-- a splash's drop: a short-lived shot dealing a share of the shot's damage, shedding its material as it goes
+		local drop_damage = {}
+		for kind, amount in pairs( look.damage or {} ) do
+			drop_damage[#drop_damage + 1] = kind .. '="' .. amount * BASE.splash_damage .. '"'
+		end
+		ModTextFileSetContent( carrier_file( key, "splash" ), fire_audio( fill( bolt, copy( common, {
+			damage_by_type = table.concat( drop_damage, " " ), explosion_damage = common.explosion_damage * BASE.splash_damage,
+			radius = math.floor( common.radius / 2 ), lifetime = BASE.splash_lifetime, die_on_low_velocity = 1, sprite = bolt_sprite,
+			sprite_offset = 2, trail_count = 2, trail_interval = 1, light_radius = 30,
+		} ) ), key, false ) )
 		ModTextFileSetContent( carrier_file( key, "field" ), fire_audio( fill( field, copy( common, {
 			field_radius = BASE.field_radius, field_lifetime = BASE.field_lifetime, field_interval = 1,
 			field_damage = main_amount * BASE.field_damage, field_every = BASE.field_every,

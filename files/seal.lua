@@ -10,6 +10,8 @@ local MIN_RING_SIZE = 50     -- smallest ring, in gui units
 local MAX_ROUNDNESS = 0.22   -- std deviation of the radius / mean radius
 local MIN_OPEN_TURN = 0.5    -- a round line covering less than this share of the turn is not a ring attempt
 local MAX_GAP_ANGLE = 0.25   -- widest gap (radians) a closed ring may leave; a wider one is a prepared ring
+local EMPTY_RING_GAP = 0.09  -- ... an empty one only this (one direction of RING_BINS): a ring left open on purpose to draw
+                             -- in later must not wake as the shockwave
 local RING_BINS = 72         -- directions checked around the ring
 local CLOSING_OFF = 0.08     -- a short stroke closing the ring's gap lies this close to its line (share of the radius)
 local OUTER_RING = 1.03      -- an open ring this much bigger than the closed one is the real ring, still open
@@ -32,6 +34,18 @@ local CENTRAL = 0.35         -- strokes whose middle is this close to the center
 local SPAN = 0.55            -- ... unless it is a big sign spanning the seal (Skysoaring, Flame Shot)
 local SPAN_MARGIN = 0.06     -- a sign in the center must be read this much better than as a sigil
 local CENTER_SIGN_MARGIN = 0.15 -- no wiki seal has a sign in its middle: two sigils side by side are likelier
+-- Twins: a seal's signs are drawn round its ring the same, often mirrored. A glyph drawn like a sign read clearly in the
+-- same seal (TWIN_SURE) - both turned to face the middle, as drawn or mirrored - is its twin (seal_twins) ...
+local TWIN_SURE = 0.65   -- (SEAL_GOOD_SCORE) a sign read this well can have twins
+local TWIN_SHAPE = 0.8   -- ... a glyph this much like it ...
+local TWIN_SIZE = 1.35   -- ... no more than this much bigger or smaller ...
+local TWIN_RING = 0.3    -- ... both this far from the middle (shares of the radius)
+local TWIN_GAP = 0.1     -- pieces this close (a share of the radius) may be one glyph torn in its strokes
+local TWIN_OVER = 0.1    -- a sign read on its own is read as its twin when it is this much more like the twin ...
+local TWIN_READ = 0.45   -- ... or when it reads as the twin's sign this well ...
+local TWIN_TIE = 0.08    -- ... no more than this worse than as anything, and looks somewhat like the twin
+local TWIN_LOOK = 0.5    -- (a glyph of a wiki's seal of its own may read as a sign, but doesn't look like its twin)
+local TWIN_AGREE = 0.55  -- two glyphs or more reading as one sign this well make it sure too
 local RING_ZONE = 0.55       -- by the ring a sign ...
 local RING_MARGIN = 0.04     -- ... may be read this much worse than a sigil and still count
 local CIRCLE_ROUNDNESS = 0.1 -- rings inside the seal are drawn with care: a rounded square (Rain) isn't one
@@ -623,10 +637,295 @@ local function recognize_symbol( strokes, box, ring )
 		cache.count = ( cache.count or 0 ) + 1
 	end
 	if not hit then return nil end
-	-- a copy: readings get changed by who reads them
+	-- a copy: readings get changed by who reads them; it keeps the strokes it read (the book marks a seal's parts)
 	local copy = {}
 	for k, v in pairs( hit ) do copy[k] = v end
+	copy.strokes = strokes
 	return copy
+end
+
+-- A glyph turned to face the middle, as a sign at the bottom of the ring is drawn; and its box
+local function posed( strokes, ring )
+	local b = bbox( strokes )
+	return rotate( strokes, b.cx, b.cy, math.pi / 2 - math.atan2( b.cy - ring.y, b.cx - ring.x ) ), b
+end
+local function mirrored_points( strokes )
+	local out = {}
+	for i, stroke in ipairs( strokes ) do
+		out[i] = {}
+		for j, p in ipairs( stroke ) do out[i][j] = { x = -p.x, y = p.y } end
+	end
+	return out
+end
+
+-- 'strokes' read as the sign 'key' only, in their place on the ring (a glyph read as its twin): its pose, turn and
+-- score as that sign, or nil when even that reads too badly
+local key_sets = {}
+local function read_as_sign( strokes, ring, key )
+	if not key_sets[key] then
+		local _, signs = template_sets()
+		local only = {}
+		for _, tpl in ipairs( signs ) do
+			if tpl.key == key then only[#only + 1] = tpl end
+		end
+		key_sets[key] = only
+	end
+	local box = bbox( strokes )
+	local dx, dy = box.cx - ring.x, box.cy - ring.y
+	local angle = math.atan2( dy, dx )
+	local m = recognizer_best( key_sets[key], rotate( strokes, box.cx, box.cy, math.pi / 2 - angle ), SEAL_MIN_SCORE )
+	if not m then return nil end
+	return { kind = "sign", key = key, score = m.score, inverted = m.template.inverted, turn = m.template.turn,
+		mirror = m.template.mirror, dir = angle - math.pi + m.template.tilt, margin = 1, twin = true, strokes = strokes,
+		angle = angle, dist = math.sqrt( dx * dx + dy * dy ) / ring.r, size = box.size / ring.r }
+end
+
+-- Twins round the ring: a seal's signs are drawn round it alike, often mirrored. 'named': glyphs whose reading is sure,
+-- { strokes, key (a sign's, or nil) }; 'pieces': the others, { strokes, box, own (how well it reads on its own, 0: not
+-- at all) }. A piece - or two or three lying close together, a glyph torn in its strokes - is a named glyph's twin when
+--   it is drawn like it: both turned to face the middle, as drawn or mirrored, very alike and about as big (the same
+--   glyph copied - a wiki's seal traced), or
+--   it reads as that glyph's sign about as well as it reads as anything, looks somewhat like it, and is about as big
+--   (a hand draws one of the seal's signs worse: a sloppy fourth column read as Piercing; a torn one as two signs).
+-- Returns { members (piece indices), named (index), score, strokes }, the likest first, no piece in two. Used to read a
+-- seal (parse_with) and to name the parts of the wiki's seals (tools/make_grimoire_parts.py), so the book reads and
+-- names a drawing alike.
+function seal_twins( named, pieces, ring )
+	local entries, sizes, by_key = {}, {}, {}
+	for n, glyph in ipairs( named ) do
+		local shape, b = posed( glyph.strokes, ring )
+		if math.sqrt( ( b.cx - ring.x ) ^ 2 + ( b.cy - ring.y ) ^ 2 ) >= TWIN_RING * ring.r then
+			entries[#entries + 1] = { key = n, shape = shape }
+			entries[#entries + 1] = { key = n, shape = mirrored_points( shape ) }
+			sizes[n] = b.size
+			if glyph.key and not by_key[glyph.key] then by_key[glyph.key] = n end
+		end
+	end
+	if #entries == 0 or #pieces == 0 then return {} end
+	local r15 = math.rad( 15 )
+	local set = recognizer_new_set( entries, { -r15, 0, r15 } )
+	local function gap( a, b ) return math.max( a.minx - b.maxx, b.minx - a.maxx, a.miny - b.maxy, b.miny - a.maxy, 0 ) end
+	local near = {}
+	for i = 1, #pieces do
+		near[i] = {}
+		for j = 1, #pieces do
+			if i ~= j and gap( pieces[i].box, pieces[j].box ) <= TWIN_GAP * ring.r then near[i][#near[i] + 1] = j end
+		end
+	end
+	local candidates, seen = {}, {}
+	local function add( members )
+		table.sort( members )
+		local key = table.concat( members, "," )
+		if not seen[key] then
+			seen[key] = true
+			candidates[#candidates + 1] = members
+		end
+	end
+	for i = 1, #pieces do
+		add( { i } )
+		for _, j in ipairs( near[i] ) do
+			add( { i, j } )
+			for _, k in ipairs( near[j] ) do
+				if k ~= i then add( { i, j, k } ) end
+			end
+		end
+	end
+	local function alike_size( size, n )
+		local ratio = size / sizes[n]
+		return ratio > 1 / TWIN_SIZE and ratio < TWIN_SIZE
+	end
+	local twins = {}
+	for _, members in ipairs( candidates ) do
+		local list, own = {}, 0
+		for _, m in ipairs( members ) do
+			for _, stroke in ipairs( pieces[m].strokes ) do list[#list + 1] = stroke end
+			own = math.max( own, pieces[m].own or 0 )
+		end
+		local shape, b = posed( list, ring )
+		if math.sqrt( ( b.cx - ring.x ) ^ 2 + ( b.cy - ring.y ) ^ 2 ) >= TWIN_RING * ring.r then
+			local twin
+			-- how like each named glyph it looks, as drawn or mirrored
+			local look = {}
+			for _, m in ipairs( recognizer_scores( set, shape ) ) do look[m.key] = math.max( look[m.key] or 0, m.score ) end
+			-- drawn like it
+			for n, score in pairs( look ) do
+				if score >= TWIN_SHAPE and score >= own + TWIN_OVER and alike_size( b.size, n ) and ( not twin or score > twin.score ) then
+					twin = { named = n, score = score }
+				end
+			end
+			-- read as its sign about as well as anything, looking somewhat like a glyph of that sign
+			for key, n in pairs( by_key ) do
+				local looks = 0
+				for m, glyph in ipairs( named ) do
+					if glyph.key == key then looks = math.max( looks, look[m] or 0 ) end
+				end
+				local as = looks >= TWIN_LOOK and read_as_sign( list, ring, key )
+				if as and as.score >= TWIN_READ and as.score >= own - TWIN_TIE and alike_size( b.size, n )
+					and ( not twin or as.score > twin.score ) then
+					twin = { named = n, score = as.score }
+				end
+			end
+			if twin then
+				twin.members, twin.strokes = members, list
+				twins[#twins + 1] = twin
+			end
+		end
+	end
+	-- the likest first, a joined-up glyph before its pieces when as like
+	table.sort( twins, function( a, b )
+		if math.abs( a.score - b.score ) > 0.01 then return a.score > b.score end
+		return #a.members > #b.members
+	end )
+	local used, out = {}, {}
+	for _, twin in ipairs( twins ) do
+		local free = true
+		for _, m in ipairs( twin.members ) do
+			if used[m] then free = false end
+		end
+		if free then
+			for _, m in ipairs( twin.members ) do used[m] = true end
+			out[#out + 1] = twin
+		end
+	end
+	return out
+end
+
+-- A seal's glyphs read weakly or not at all round the ring, twins of a sign it has read surely, are that sign (the signs
+-- of a seal are drawn alike, and a hand draws one of them worse). Sure: read well (TWIN_SURE), or read fairly well
+-- (TWIN_AGREE) by two glyphs or more. A sign drawn clearly stays what it is, whatever its neighbours.
+-- Groups: { strokes, box, symbols }.
+local function read_twins( groups, ring )
+	local count = {}
+	for _, g in ipairs( groups ) do
+		local only = g.symbols and #g.symbols == 1 and g.symbols[1]
+		if only and only.kind == "sign" and only.score >= TWIN_AGREE and only.dist >= TWIN_RING then
+			count[only.key] = ( count[only.key] or 0 ) + 1
+		end
+	end
+	local named, pieces, of = {}, {}, {}
+	for gi, g in ipairs( groups ) do
+		local only = g.symbols and #g.symbols == 1 and g.symbols[1]
+		local sure = only and only.kind == "sign" and only.dist >= TWIN_RING
+			and ( only.score >= TWIN_SURE or ( only.score >= TWIN_AGREE and count[only.key] >= 2 ) )
+		if sure then
+			named[#named + 1] = { strokes = g.strokes, key = only.key }
+			-- glyphs agreeing on one sign aren't ambiguous between it and another (seal_spell.lua SIGN_MIN_MARGIN)
+			if count[only.key] >= 2 then only.margin = math.max( only.margin or 0, 1 ) end
+		end
+		if not sure or only.score < TWIN_SURE then
+			-- not sure, or sure only by agreeing: may yet be another sign's twin
+			local weak, own = true, 0
+			for _, sym in ipairs( g.symbols or {} ) do
+				if sym.kind ~= "sign" or sym.score >= TWIN_SURE then weak = false end
+				own = math.max( own, sym.score )
+			end
+			if weak and g.box.size < RING_ZONE * ring.r then
+				pieces[#pieces + 1] = { strokes = g.strokes, box = g.box, own = own }
+				of[#pieces] = gi
+			end
+		end
+	end
+	local gone, added = {}, {}
+	for _, twin in ipairs( seal_twins( named, pieces, ring ) ) do
+		local key = named[twin.named].key
+		local same = #twin.members == 1 and groups[of[twin.members[1]]].symbols
+		same = same and #same == 1 and same[1].key == key
+		local sym = not same and read_as_sign( twin.strokes, ring, key )
+		if sym then
+			for _, m in ipairs( twin.members ) do gone[of[m]] = true end
+			added[#added + 1] = { strokes = twin.strokes, box = bbox( twin.strokes ), symbols = { sym } }
+		end
+	end
+	if #added == 0 then return groups end
+	local out = {}
+	for gi, g in ipairs( groups ) do
+		if not gone[gi] then out[#out + 1] = g end
+	end
+	for _, g in ipairs( added ) do out[#out + 1] = g end
+	return out
+end
+
+-- The parts of a wiki's seal - drawn by hand in the book, or a page of the grimoire (read once by
+-- tools/make_grimoire_parts.py: it would take seconds here) - for the book to name the part under the mouse
+-- (notebook.lua draw_parts). The seal is cast as a whole; its drawing is read as any seal ('tree': parse_seal's) and a
+-- part named when it is sure: a symbol of the seal's recipe ('symbols', 'recipe'); with no recipe (a traced seal) one
+-- read clearly, an element sigil only in the middle. A glyph that is a named part's twin round the ring (seal_twins,
+-- as the book reads a seal) is named the same; every other glyph - what the reading tore or didn't read, grouped as the
+-- book groups strokes, pieces lying close together joined - is a 'mark', a glyph of the seal's own: the wiki draws
+-- glyphs of its own, and a rough match would name them wrongly.
+--   seal_parts( strokes, tree, entry ) -> { { kind ("sigil", "sign", "mark"), key, inverted, strokes } }
+local PART_TRACED = 0.7  -- a traced seal's symbol is named when read this well ...
+local PART_SIGIL = 0.5   -- ... a sigil only this close to the middle (shares of the radius): farther out it is a sign's look
+local PART_LARGEST = 0.9 -- what no symbol reads, as big as this share of the radius or more, is a ring or a line
+local PART_GLYPH = 0.45  -- pieces of the seal's own glyphs lying close together are one, if no bigger than this
+local PART_MARGIN = 3.5  -- how close strokes are grouped (as segment's FINE_MARGIN)
+function seal_parts( strokes, tree, entry )
+	local known = {}
+	for _, signature in ipairs( { entry and entry.symbols or "", entry and entry.recipe or "" } ) do
+		for key in signature:gmatch( "([%w_]+:[%w_]+)=" ) do known[key] = true end
+	end
+	local recipe = next( known ) ~= nil
+	local ring, ring_parts = find_ring( strokes )
+	ring = ring or ( tree and tree.ring )
+	if not ring then return {} end
+	ring_parts = ring_parts or {}
+	local is_ring = {}
+	for i in pairs( ring_parts ) do is_ring[strokes[i]] = true end
+	local parts, named, taken = {}, {}, {}
+	for _, sym in ipairs( tree and tree.symbols or {} ) do
+		local sure
+		if recipe then sure = known[sym.kind .. ":" .. sym.key]
+		else sure = sym.score >= PART_TRACED and not ( sym.kind == "sigil" and sym.dist >= PART_SIGIL ) end
+		if sure and sym.strokes then
+			parts[#parts + 1] = { kind = sym.kind, key = sym.key, inverted = sym.inverted, strokes = sym.strokes }
+			named[#named + 1] = { strokes = sym.strokes, key = sym.kind == "sign" and sym.key or nil, part = #parts }
+			for _, stroke in ipairs( sym.strokes ) do taken[stroke] = true end
+		end
+	end
+	-- the rest, the ring left out: grouped as the book first groups strokes (segment); a group too big to be one glyph
+	-- (glyphs close together in a band chain up) grouped again, closer
+	local rest = {}
+	for _, stroke in ipairs( strokes ) do
+		if not taken[stroke] and not is_ring[stroke] and #stroke > 0 then rest[#rest + 1] = stroke end
+	end
+	local pieces = {}
+	local function split( list, margin )
+		for _, g in ipairs( group_strokes( list, margin, 0 ) ) do
+			if g.box.size < PART_LARGEST * ring.r then
+				local sym = recognize_symbol( g.strokes, g.box, ring )
+				pieces[#pieces + 1] = { strokes = g.strokes, box = g.box, own = sym and sym.score or 0 }
+			elseif margin > 0.6 and #g.strokes > 1 then
+				split( g.strokes, margin / 2 )
+			end
+		end
+	end
+	split( rest, PART_MARGIN )
+	local used = {}
+	for _, twin in ipairs( seal_twins( named, pieces, ring ) ) do
+		local of = parts[named[twin.named].part]
+		parts[#parts + 1] = { kind = of.kind, key = of.key, inverted = of.inverted, strokes = twin.strokes }
+		for _, m in ipairs( twin.members ) do used[m] = true end
+	end
+	-- the seal's own glyphs: pieces lying close together are one, unless together they'd be bigger than a glyph
+	local left, piece_of = {}, {}
+	for i, piece in ipairs( pieces ) do
+		if not used[i] then
+			for _, stroke in ipairs( piece.strokes ) do
+				left[#left + 1] = stroke
+				piece_of[stroke] = i
+			end
+		end
+	end
+	for _, g in ipairs( group_strokes( left, TWIN_GAP * ring.r, 0 ) ) do
+		if g.box.size < PART_GLYPH * ring.r then
+			parts[#parts + 1] = { kind = "mark", key = "-", inverted = false, strokes = g.strokes }
+		else
+			local back = {}
+			for _, stroke in ipairs( g.strokes ) do back[piece_of[stroke]] = true end
+			for i in pairs( back ) do parts[#parts + 1] = { kind = "mark", key = "-", inverted = false, strokes = pieces[i].strokes } end
+		end
+	end
+	return parts
 end
 
 -- How good a reading of a group of strokes is: its symbols' mean score, a little less for every extra symbol
@@ -718,6 +1017,21 @@ local function split_in_two( strokes, ring )
 	return best
 end
 
+-- What a reading loses for signs beside a sigil in the very middle of the seal: they are rather the sigil's own parts
+-- drawn apart - the water sigil's drops beside its S, which alone reads as wind, aren't two signs in its middle
+local function signs_beside_sigil( list )
+	local sigil = false
+	for _, sym in ipairs( list ) do
+		if sym.kind == "sigil" then sigil = true end
+	end
+	if not sigil then return 0 end
+	local cost = 0
+	for _, sym in ipairs( list ) do
+		if sym.kind == "sign" and sym.dist < CENTER_ZONE then cost = cost + CENTER_SIGN_MARGIN end
+	end
+	return cost
+end
+
 -- Reads a group of strokes: whole, as its touching parts, peeled, or split in two - the best reading wins.
 -- Returns the symbols or nil.
 local function read_group( group, ring )
@@ -735,7 +1049,7 @@ local function read_group( group, ring )
 	local best, best_value
 	for i, r in pairs( readings ) do
 		if r and #r > 0 then
-			local v = reading_value( r )
+			local v = reading_value( r ) - signs_beside_sigil( r )
 			if i ~= 1 and compact_sign( whole ) then v = v - COMPOUND_SIGN_MARGIN * ( #r - 1 ) end
 			-- in the middle of the seal a sign spanning it has to be clearly better than sigils side by side
 			if i == 1 and whole and whole.kind == "sign" and whole.dist < CENTER_ZONE then v = v - CENTER_SIGN_MARGIN end
@@ -907,9 +1221,15 @@ end
 
 -- Is the seal's ring closed? (the stroke that closes it awakens the seal) Only the outermost ring counts: a layer
 -- drawn closed inside a ring that still has its gap doesn't awaken the seal
+-- A ring with nothing in it yet wakes only when it is closed for sure: it is the shockwave
 function seal_ring_closed( strokes )
-	local ring, _, open_r = find_ring( strokes )
-	return ring ~= nil and ( not open_r or open_r <= ring.r * OUTER_RING )
+	local ring, parts, open_r = find_ring( strokes )
+	if not ring or ( open_r and open_r > ring.r * OUTER_RING ) then return false end
+	if ring.gap <= EMPTY_RING_GAP then return true end
+	for i, stroke in ipairs( strokes ) do
+		if not parts[i] and bbox( { stroke } ).size >= NOISE_SIZE then return true end
+	end
+	return false
 end
 
 local function inside_circle( stroke, c, share )
@@ -1211,6 +1531,10 @@ local function parse_with( strokes, noise )
 		if not glaive_strokes[stroke] then stray_ink = stray_ink + ink end
 	end
 	if stray_ink > math.max( 0.2 * ring.r, OUTSIDE_SLIP * ( inner_ink + outside_ink ) ) then
+		seal.trouble = {}
+		for _, stroke in ipairs( outside ) do
+			if not glaive_strokes[stroke] then seal.trouble[#seal.trouble + 1] = stroke end
+		end
 		return nil, "Marks outside the ring are not recognized", seal
 	end
 
@@ -1304,7 +1628,7 @@ local function parse_with( strokes, noise )
 				end
 				list = kept
 			end
-			local v = reading_value( list )
+			local v = reading_value( list ) - signs_beside_sigil( list )
 			if #list == 1 and list[1].kind == "sign" and list[1].dist < CENTER_ZONE then v = v - CENTER_SIGN_MARGIN end
 			return list, v
 		end
@@ -1365,7 +1689,7 @@ local function parse_with( strokes, noise )
 	for _, g in ipairs( groups ) do
 		if not g.taken then kept_groups[#kept_groups + 1] = g end
 	end
-	groups = kept_groups
+	groups = read_twins( kept_groups, ring )
 	for _, group in ipairs( decorations ) do groups[#groups + 1] = group end
 	-- segment() forgives individual short marks, but many such marks must not disappear together and leave
 	-- an otherwise convincing sigil behind. Count ink that none of the chosen groups explains.
@@ -1376,16 +1700,24 @@ local function parse_with( strokes, noise )
 	for _, stroke in ipairs( inner ) do
 		if not grouped[stroke] then unread_ink = unread_ink + stroke_length( stroke ) end
 	end
+	-- what a seal fails on, the book marks on the page (seal.trouble: the strokes)
 	if unread_ink > math.max( 0.25 * ring.r, INSIDE_SLIP * ( inner_ink + tiny_inner_ink ) ) then
+		seal.trouble = {}
+		for _, stroke in ipairs( inner ) do
+			if not grouped[stroke] then seal.trouble[#seal.trouble + 1] = stroke end
+		end
 		return nil, "Marks inside the ring are not recognized", seal
 	end
+	local lines = {}
 	for _, group in ipairs( groups ) do
 		local symbols = group.symbols
 		if not symbols then
 			-- a long line across the seal that is no sign (the Glowstone Path's crossing arcs) only costs precision
 			if group.box.size >= 1.2 * ring.r then
 				seal.lines = ( seal.lines or 0 ) + 1
+				for _, stroke in ipairs( group.strokes ) do lines[#lines + 1] = stroke end
 			else
+				seal.trouble = group.strokes
 				return nil, "A sign inside the ring is not recognized", seal
 			end
 		end
@@ -1394,6 +1726,7 @@ local function parse_with( strokes, noise )
 	-- An empty ring is the shockwave only when it really is empty. An unreadable long stroke must not disappear
 	-- into the exception for the Glowstone Path's crossing arcs and leave a false shockwave behind.
 	if ( seal.lines or 0 ) > 0 and #seal.symbols == 0 and #seal.frames == 0 and #seal.subs == 0 and #seal.links == 0 then
+		seal.trouble = lines
 		return nil, "A sign inside the ring is not recognized", seal
 	end
 	return seal

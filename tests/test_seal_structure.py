@@ -147,10 +147,82 @@ class ModifierAcceptanceTests(unittest.TestCase):
             self.assertEqual(spell is not None, expected, (size, score, margin))
 
 
+class WaterIsNotWindTests(unittest.TestCase):
+    """The water sigil drawn small and rough: its S alone reads as wind (the wind sigil's simplest template) and its drops
+    as signs beside it, in the middle of the seal - where no seal has signs. Read whole, it is water."""
+    @classmethod
+    def setUpClass(cls):
+        cls.lua = fixtures.load_mod()
+        cls.drawings = json.loads((Path(fixtures.MOD) / "tests/data/water_not_wind.json").read_text(encoding="utf-8"))
+
+    def test_the_drops_beside_the_s_are_water(self):
+        self.assertGreater(len(self.drawings), 0)
+        for i, d in enumerate(self.drawings):
+            result, spell = fixtures.run(self.lua, [[tuple(p) for p in st] for st in d["strokes"]])
+            self.assertEqual("water:burst", result, f"drawing {i}: {d['note']}")
+
+
+class TwinSignsTests(unittest.TestCase):
+    """A seal's signs are drawn round its ring alike: one drawn worse than its twins, read weakly as another sign or torn,
+    is read as they are (seal.lua read_twins); a different sign drawn clearly stays what it is."""
+    @classmethod
+    def setUpClass(cls):
+        cls.lua = fixtures.load_mod()
+        cls.drawings = json.loads((Path(fixtures.MOD) / "tests/data/twin_signs.json").read_text(encoding="utf-8"))
+
+    def test_signs_read_like_their_twins_and_odd_ones_stay(self):
+        self.assertGreater(len(self.drawings), 4)
+        for i, d in enumerate(self.drawings):
+            strokes = [[tuple(p) for p in st] for st in d["strokes"]]
+            res = self.lua.eval("parse_seal")(fixtures.lua_strokes(self.lua, strokes))
+            tree = res[0] if isinstance(res, tuple) else res
+            self.assertIsNotNone(tree, f"drawing {i}: {d['note']}")
+            got = sorted(s["key"] for s in tree["symbols"].values() if s["kind"] == "sign")
+            self.assertEqual(d["signs"], got, f"drawing {i}: {d['note']}")
+
+
+class TroubleMarksTests(unittest.TestCase):
+    """A seal that fails tells which strokes it fails on (seal.trouble), for the book to mark them red."""
+    @classmethod
+    def setUpClass(cls):
+        cls.lua = fixtures.load_mod()
+
+    def read(self, strokes):
+        spell, err, tree = self.lua.eval("read_spell")(fixtures.lua_strokes(self.lua, strokes))
+        marked = [[(p["x"], p["y"]) for p in st.values()] for st in (tree["trouble"] or {}).values()] if tree else []
+        return spell, err, marked
+
+    def test_a_scribble_that_is_no_sign_is_marked(self):
+        random.seed(5)
+        strokes = fixtures.seal(self.lua, ["fire"], [("column", 90, False), ("column", 270, False)])
+        scribble = [(55 + 9 * math.cos(t * 2.3) + t * 0.5, 50 + 7 * math.sin(t * 3.1)) for t in range(40)]
+        spell, err, marked = self.read(strokes + [scribble])
+        self.assertIsNone(spell)
+        self.assertEqual([scribble], marked, err)
+
+    def test_an_ambiguous_sign_of_a_player_is_marked(self):
+        examples = json.loads((Path(fixtures.MOD) / "tests/data/player_seals.json").read_text(encoding="utf-8"))
+        example = next(e for e in examples if e["name"] == "lightning with ambiguous peripheral remnants")
+        strokes = [[tuple(map(float, p.split(","))) for p in st.split()] for st in example["strokes"]]
+        spell, err, marked = self.read(strokes)
+        self.assertIsNone(spell)
+        # only some of its strokes: not the ring, not the lightning in the middle (strokes 2, 3, 17, 18)
+        self.assertTrue(0 < len(marked) < len(strokes), err)
+        for i in (2, 3, 17, 18):
+            self.assertNotIn(strokes[i - 1], marked, err)
+
+    def test_a_seal_that_reads_marks_nothing(self):
+        random.seed(7)
+        spell, err, marked = self.read(fixtures.seal(self.lua, ["fire"], [("column", 90, False), ("column", 270, False)]))
+        self.assertIsNotNone(spell, err)
+        self.assertEqual([], marked)
+
+
 def run_checks():
     return unittest.TextTestRunner(stream=sys.stdout, verbosity=1).run(
         unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(cls)
-                           for cls in (FlickerShapeTests, ModifierAcceptanceTests))
+                           for cls in (FlickerShapeTests, ModifierAcceptanceTests, WaterIsNotWindTests, TwinSignsTests,
+                                       TroubleMarksTests))
     ).wasSuccessful()
 
 

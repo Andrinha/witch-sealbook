@@ -58,7 +58,7 @@ end
 '''
 
 FORMS = [("column", False), ("levitation", False), ("levitation", True), ("dispersion", False), ("burst", False),
-         ("rain", False), ("ring", False)]
+         ("field", False), ("rain", False), ("ring", False)]
 # the form's own signs, as a read seal has them
 FORM_SIGNS = {"column": "thrust:1", "levitation": "float:1"}
 WEIGHT = {"spin": 0.8, "pierce": 2}
@@ -175,9 +175,11 @@ class Reading(unittest.TestCase):
         self.assertIsNotNone(compiled("scalewolf", 0.55)[0])
 
     def test_kept(self):
-        have, summary = self.spell(["fire"], [("reflection", False)] * 2)  # a field round the caster
+        # a field round the caster: Dispersion held by Stability
+        have, summary = self.spell(["fire"], [("dispersion", False), ("reflection", False), ("stability", False), ("reflection", False)])
         self.assertIn("reflect", have)
         self.assertIn("reflects projectiles", summary)
+        self.assertIn("circle around", summary)
         have, summary = self.spell(["dragon"], [("expansion", False)] * 2)
         self.assertIn("grow", have)
         have, summary = self.spell(["water"], [("dispersion", False)] * 2 + [("crush", False)] * 2)
@@ -213,7 +215,7 @@ class InTheWorld(unittest.TestCase):
         self.assertEqual([], list(self.lua.eval("W.errors").values()))
 
     def test_field_reflects_enemy_projectiles(self):
-        self.cast("element=fire;form=burst;b=reflect:1")
+        self.cast("element=fire;form=field;b=reflect:1")
         self.lua.execute('''
             SHOT = EntityCreateNew( "enemy shot" )
             EntitySetTransform( SHOT, 20, GROUND - 8 )
@@ -229,7 +231,7 @@ class InTheWorld(unittest.TestCase):
         self.no_errors()
 
     def test_field_keeps_creatures_out(self):
-        self.cast("element=fire;form=burst;b=bound:1")
+        self.cast("element=fire;form=field;b=bound:1")
         # an enemy just outside the edge of the field round the caster is pushed out, one just inside in
         self.lua.execute('''
             EntitySetTransform( ENEMIES[3], 34, GROUND - 8 )
@@ -248,8 +250,8 @@ class InTheWorld(unittest.TestCase):
             e = self.entity_with("AreaDamageComponent")
             return self.lua.eval(f'''ComponentGetValue2( EntityGetFirstComponent( {e}, "AreaDamageComponent" ), "damage_per_frame" ),
                 ComponentGetValue2( EntityGetFirstComponent( {e}, "LifetimeComponent" ), "lifetime" )''')
-        weak, short = field("element=fire;form=burst;force=0;lifetime=0;b=")
-        strong, long = field("element=fire;form=burst;force=1;lifetime=1;b=strong:1")
+        weak, short = field("element=fire;form=field;force=0;lifetime=0;b=")
+        strong, long = field("element=fire;form=field;force=1;lifetime=1;b=strong:1")
         self.assertGreater(strong, weak * 1.5)
         self.assertGreater(long, short)
 
@@ -279,7 +281,7 @@ class InTheWorld(unittest.TestCase):
         self.no_errors()
 
     def test_detection_places_the_field_at_the_nearest_enemy(self):
-        self.cast("element=fire;form=burst;b=sense:1")
+        self.cast("element=fire;form=field;b=sense:1")
         e = self.entity_with("AreaDamageComponent")
         x, y = self.lua.eval(f"EntityGetTransform( {e} )")[:2]
         ex, ey = self.lua.eval("EntityGetTransform( ENEMIES[3] )")[:2]

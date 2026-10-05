@@ -7,6 +7,7 @@ import json
 import math
 import os
 import random
+import re
 import sys
 import time
 
@@ -330,20 +331,32 @@ def test_carriers():
         except Exception as e:  # noqa: BLE001
             bad.append(f"{f}: {e}")
     looks = list(lua.eval("DICTIONARY_LOOKS").keys())
-    need = [f"mods/witch_notebook/files/entities/carriers/{c}_{k}.xml" for k in looks for c in ("bolt", "orb", "field")]
+    need = [f"mods/witch_notebook/files/entities/carriers/{c}_{k}.xml" for k in looks for c in ("bolt", "orb", "field", "splash")]
     missing = [f for f in need if f not in files]
     names = lua.eval("names")
     sprites = all(names[f"mods/witch_notebook/files/gfx/{c}_{k}.png"] for k in looks for c in ("bolt", "orb"))
-    print(f"  {len(files)} carriers for {len(looks)} elements, broken {bad or 'none'}, missing {missing or 'none'}, sprites {sprites}")
+    # a splash's drop: short-lived, a share of the shot's damage of each kind
+    base = lua.eval("DICTIONARY_CARRIER_BASE")
+
+    def projectile(f):
+        c = files[f"mods/witch_notebook/files/entities/carriers/{f}.xml"]
+        life = int(re.search(r'lifetime="(\d+)"', c).group(1))
+        kinds = dict((k, float(v)) for k, v in re.findall(r'(\w+)="([\d.]+)"', re.search(r"<damage_by_type([^>]*)>", c).group(1)))
+        return life, kinds
+    drop, shot = projectile("splash_fire"), projectile("bolt_fire")
+    splash_ok = (drop[0] == base["splash_lifetime"] < shot[0] and drop[1].keys() == shot[1].keys()
+                 and all(abs(drop[1][k] - shot[1][k] * base["splash_damage"]) < 1e-6 for k in shot[1]))
+    print(f"  {len(files)} carriers for {len(looks)} elements, broken {bad or 'none'}, missing {missing or 'none'}, sprites {sprites}; "
+          f"a fire splash's drop {drop}, a fire shot {shot}")
     # every effect of every element and form resolves to a carrier that exists or a game file
     effect = lua.eval("dictionary_effect")
     elements = [k for k in lua.eval("DICTIONARY_ELEMENTS").keys()]
     # a wave out from the seal and a ring are the seal's own magic (manifest.lua), not projectiles
-    unresolved = [f"{e}:{f}" for e in elements for f in ("column", "dispersion", "levitation", "burst")
+    unresolved = [f"{e}:{f}" for e in elements for f in ("column", "dispersion", "levitation", "burst", "field")
                   if not effect(e, f) or (effect(e, f)["carrier"] not in ("nova", "ring") and effect(e, f)["file"].startswith("mods/")
                                           and effect(e, f)["file"] not in files)]
-    print(f"  effects of {len(elements)} elements x 4 forms, unresolved: {unresolved or 'none'}")
-    return not bad and not missing and sprites and not unresolved
+    print(f"  effects of {len(elements)} elements x 5 forms, unresolved: {unresolved or 'none'}")
+    return not bad and not missing and sprites and not unresolved and splash_ok
 
 
 def test_behaviors(lua):
@@ -366,8 +379,14 @@ def test_behaviors(lua):
          [("levitation", 0, False), ("levitation", 180, False), ("column", 90, False), ("column", 270, False)], None, {"thrust", "float"}),
         ("earth + 4 columns turned the same way (spin)", ["earth"], [("column", a, False, 30) for a in CROSS], "earth:column", {"thrust", "spin"}),
         ("fire + pull + inverted pull (cancel out)", ["fire"], [("pull", 0, False), ("pull", 180, True)], "fire:burst", set()),
-        ("fire + 2 pierce (a field can't pierce)", ["fire"], [("pierce", 0, False), ("pierce", 180, False)], "fire:burst", set()),
-        ("fire + 2 crosshair (a field at the target)", ["fire"], [("crosshair", 0, False), ("crosshair", 180, False)], "fire:burst", {"homing"}),
+        ("fire + 2 pierce (more drops in the splash)", ["fire"], [("pierce", 0, False), ("pierce", 180, False)], "fire:burst", {"pierce"}),
+        ("fire + 2 crosshair (the splash's drops home in)", ["fire"], [("crosshair", 0, False), ("crosshair", 180, False)], "fire:burst", {"homing"}),
+        # Dispersion held by Stability: a field round the caster; it can't pierce
+        ("fire + dispersion + stability (a field)", ["fire"], [("dispersion", 90, False), ("stability", 0, False), ("dispersion", 270, False),
+                                                              ("stability", 180, False)], "fire:field", set()),
+        ("fire + dispersion + stability + 2 pierce (a field can't pierce)", ["fire"],
+         [("dispersion", 90, False), ("stability", 0, False), ("pierce", 45, False), ("dispersion", 270, False), ("stability", 180, False),
+          ("pierce", 225, False)], "fire:field", set()),
     ]
     ok = True
     for i, (name, sigils, signs, form, want) in enumerate(cases):
@@ -617,11 +636,11 @@ def test_player_seals(lua):
     ok = True
     for s in json.load(open(path, encoding="utf-8")) if os.path.exists(path) else []:
         strokes = [[tuple(map(float, p.split(","))) for p in st.split()] for st in s["strokes"]]
-        if s.get("named"):  # the wiki's seal it must be named after: only with the grimoire loaded
+        if s.get("named") or s.get("grimoire"):  # the wiki's seal it must be named after (or none): only with the grimoire loaded
             lua.execute(open(os.path.join(MOD, "files", "grimoire.lua"), encoding="utf-8").read())
         got, spell = run(lua, strokes)
         named = spell and spell["named"]
-        if s.get("named"):
+        if s.get("named") or s.get("grimoire"):
             lua.execute("GRIMOIRE = nil; GRIMOIRE_BY_KEY = nil")
         have = set(spell["behaviors"].keys()) if spell else set()
         good = (spell is None if s["expected"] == "reject" else got == s["expected"] and set(s["behaviors"]) <= have
@@ -1394,7 +1413,8 @@ def test_cast():
         return book, controls, holder, [dict(file=s_["file"].split("/")[-1], x=s_["x"], y=s_["y"], e=s_["entity"]) for s_ in G.shots.values()]
 
     for data, want in [("element=fire;form=column", ["bolt_fire.xml"]), ("element=ice;form=levitation", ["orb_ice.xml"]),
-                       ("element=steam;form=burst", ["field_steam.xml"]), ("element=wind;form=rain", ["bolt_wind.xml"] * 7),
+                       ("element=steam;form=burst", ["splash_steam.xml"] * 3), ("element=steam;form=field", ["field_steam.xml"]),
+                       ("element=wind;form=rain", ["bolt_wind.xml"] * 7),
                        ("element=vacuum;form=column", ["black_hole.xml"]), ("element=nonsense;form=column", ["light_bullet.xml"])]:
         _, _, _, shots = cast(data + steady)
         print(f"  {data:30s} -> {[s_['file'] for s_ in shots]}")
@@ -1403,9 +1423,17 @@ def test_cast():
     _, _, _, shots = cast("element=water;form=rain" + steady, mouse=(1000, 0))
     print(f"  cloud appears at the cursor, at most 180 away: x {shots[0]['x']:.0f}")
     ok &= shots[0]["file"] == "cloud_water.xml" and "carriers" in [s_ for s_ in G.shots.values()][0]["file"] and abs(shots[0]["x"] - 180) < 1
-    _, _, _, shots = cast("element=fire;form=burst" + steady)
+    _, _, _, shots = cast("element=fire;form=field" + steady)
     print(f"  fire circle around the caster: x {shots[0]['x']:.0f}, y {shots[0]['y']:.0f}")
     ok &= abs(shots[0]["x"]) < 1
+    # a sigil alone splashes from the hand: a few drops, short-lived and weaker than a shot
+    _, _, _, drops = cast("element=fire;form=burst" + steady)
+    _, _, _, shot = cast("element=fire;form=column" + steady)
+    life = lambda s_: G.ComponentGetValue2(G.EntityGetFirstComponentIncludingDisabled(s_["e"], "ProjectileComponent"), "lifetime")
+    hit = lambda s_: G.ComponentGetValue2(G.EntityGetFirstComponentIncludingDisabled(s_["e"], "ProjectileComponent"), "damage")
+    print(f"  fire splash: {len(drops)} drops from x {drops[0]['x']:.0f}, life {life(drops[0])} (a shot {life(shot[0])}), "
+          f"damage {hit(drops[0]):.2f} (a shot {hit(shot[0]):.2f})")
+    ok &= len(drops) == 3 and drops[0]["x"] > 4 and life(drops[0]) < life(shot[0]) and hit(drops[0]) < hit(shot[0])
 
     _, _, _, shots = cast("element=earth;form=column;force=1;focus=0;spread=0;range=1;lifetime=0.5;heavy=0;tilt=0;stability=1;precision=1")
     e = shots[0]["e"]
@@ -1454,7 +1482,7 @@ def test_cast():
     print(f"  levitation {speed(orb):.0f}, with columns {speed(rising):.0f}, old seal {speed(old):.0f}")
     ok &= speed(orb) < speed(rising) and abs(speed(old) - speed(orb)) < 1
 
-    _, _, _, shots = cast("element=fire;form=burst" + steady + ";b=homing:1", mouse=(120, 0))
+    _, _, _, shots = cast("element=fire;form=field" + steady + ";b=homing:1", mouse=(120, 0))
     print(f"  field with a crosshair: at x {shots[0]['x']:.0f} (the cursor is at 120), homing component {bool(comps_of(shots[0]['e'], 'HomingComponent'))}")
     ok &= abs(shots[0]["x"] - 120) < 1 and not comps_of(shots[0]["e"], "HomingComponent")
 
@@ -1487,6 +1515,30 @@ def test_cast():
     print(f"  each book casts its own page: {({k: v[1] for k, v in delays.items()})}, delays {({k: v[0] for k, v in delays.items()})}")
     ok &= (delays["book"][1] == ["bolt_fire.xml"] and delays["quire"][1] == ["bolt_water.xml"] and delays["tome"][1] == ["bolt_earth.xml"]
            and delays["quire"][0] < delays["book"][0] < delays["tome"][0])
+
+    # the more a seal makes, the longer it recharges: a splash or a shot only waits for the book, a field longer, a
+    # creature longer still, a wiki seal by its tier (the Water Dragon is VII); the book keeps how long it waits
+    w = {name: G.seal_cast_delay(G.BOOKS.book, G.parse_spell_data(data)) for name, data in (
+        ("splash", "element=fire;form=burst" + steady), ("shot", "element=fire;form=column" + steady),
+        ("field", "element=fire;form=field" + steady), ("creature", "element=water;form=burst;shape=dragon" + steady),
+        ("tier I", "element=water;form=burst;named=watershot" + steady), ("tier VII", "element=water;form=burst;named=water_dragon" + steady),
+        ("swift field", "element=fire;form=field;ink=swift:1" + steady))}
+    book_delay = G.BOOKS.book.cast_delay
+    book, controls, holder, _ = cast("element=fire;form=field" + steady, frame=5000)
+    var = G.EntityGetFirstComponentIncludingDisabled(book, "VariableStorageComponent")
+    kept = (G.ComponentGetValue2(var, "value_int") - 5000, G.ComponentGetValue2(var, "value_float"))
+    # clicked while it recharges, the seal only fizzles
+    G.shots = lua.table()
+    G.spellbook_use(book, holder, controls, 5000 + w["field"] - 1)
+    fizzled = not list(G.shots.values())
+    # a wait left from another session (the frame count started again) is over: the book casts
+    G.ComponentSetValue2(var, "value_int", 90000)
+    G.shots = lua.table()
+    G.spellbook_use(book, holder, controls, 6000)
+    fizzled = fizzled and len(list(G.shots.values())) == 1
+    print(f"  recharge (frames, the book's own {book_delay}): {w}; a field cast keeps {kept}, clicked too soon it fizzles {fizzled}")
+    ok &= (w["splash"] == w["shot"] == w["tier I"] == book_delay < w["swift field"] < w["field"] < w["creature"] < w["tier VII"]
+           and kept == (w["field"], w["field"]) and fizzled)
 
     def misfires(tail):
         return sum(cast("element=fire;form=column;force=0;focus=0;spread=0;range=0;lifetime=0;heavy=0" + tail, frame=f)[3][0]["file"] != "bolt_fire.xml"
@@ -1776,21 +1828,24 @@ def test_sheet_spawns():
     S.wand_shop = True
     L.execute("made = {}")
     for k in range(200): S.spawn_all_shopitems(181 + k * 1013, 6300)
-    is_book = lambda p: p["file"].endswith(("palm_quire.xml", "great_tome.xml"))
-    in_wand_shops = [S.made[e]["file"] for e in S.made.keys()]
-    wand_books = sum(1 for f in in_wand_shops if f.endswith(("palm_quire.xml", "great_tome.xml")))
+    # a flask or a book stands on the shelf as its picture, with no body to roll or break (shop.lua shop_stand)
+    is_book = lambda p: p.get("witch_shop_book") in ("quire", "tome") and p["file"].endswith("shop_stand.xml")
+    in_wand_shops = [sheet_of(S, e) for e in S.made.keys()]
+    wand_books = sum(1 for p in in_wand_shops if is_book(p))
     wand_shops = S.wands + wand_books == 1000 and wand_books == len(in_wand_shops)
     slots = 2000
     things = [p for p in shop if p.get("cost")]
     books = [p for p in things if is_book(p)]
     sheets = [p for p in things if p.get("witch_sheet_key")]
-    flasks = [p for p in things if "potion_ink" in p["file"]]
+    flasks = [p for p in things if p.get("witch_shop_ink") and "potion_ink" in p.get("witch_shop_file", "")
+              and p["file"].endswith("shop_stand.xml") and p.get("picture", "").endswith(f"shop_flask_{p['witch_shop_ink']}.png")]
     on_sale = sum(1 for p in shop if p["file"].endswith("sale_indicator.xml"))
     replaced = slots - S.vanilla
-    # the shelf: 11 under the first row, 8 under the second; a card lies with its middle 12 over it, a flask 4, a book 6
+    # the shelf: 11 under the first row, 8 under the second; a card stands with its middle 12 over it, a flask 6, a book
+    # half its picture's height (the quire 6, the tome 7)
     heights = {(p["y"], "book" if is_book(p) else "sheet" if p.get("witch_sheet_key") else "flask") for p in things}
-    heights_ok = heights <= {(6300 + 11 - 12, "sheet"), (6270 + 8 - 12, "sheet"), (6300 + 11 - 5, "flask"), (6270 + 8 - 5, "flask"),
-                             (6300 + 11 - 6, "book")}
+    heights_ok = heights <= {(6300 + 11 - 12, "sheet"), (6270 + 8 - 12, "sheet"), (6300 + 11 - 6, "flask"), (6270 + 8 - 6, "flask"),
+                             (6300 + 11 - 6, "book"), (6300 + 11 - 7, "book")}
     print(f"  flask places: rnd_max {before} -> {potion.rnd_max}, the mod's entry {entry.value_min}..{entry.value_max} made "
           f"{[p.get('witch_sheet_key') for p in found]}")
     print(f"  chests: {len(chest)}/400 with a sheet ({sum(p['forbidden'] for p in chest)} forbidden), in Hell {len(chest_hell)}/400 "

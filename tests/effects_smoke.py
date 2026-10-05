@@ -82,6 +82,13 @@ def main():
         run(f"shop item {seed}", f"SetRandomSeed( {seed}, 7 ) return {{ sheet_shop_item( 0, GROUND - 8, {'true' if seed % 2 else 'false'} ) }}", frames=30)
     run("sheet picked up", 'local e = sheet_spawn_found( 0, GROUND - 8 ) dofile( "mods/witch_notebook/files/sheet_pickup.lua" ) '
         'item_pickup( e, PLAYER, "" ) return { GlobalsGetValue( SHEET_PENDING_VAR, "" ) }', frames=10)
+    # a flask or a book for sale stands as its picture; bought, it is the thing itself in the witch's hands
+    run("flask bought", 'local e = shop_stand( ink_flask_entity( "azure" ), 0, GROUND - 8, ink_shop_image( "azure" ), INK_SHOP_W, '
+        'INK_SHOP_H, "Flask of Azure Ink", "" ) shop_stand_set( e, "witch_shop_ink", "azure" ) '
+        'dofile( "mods/witch_notebook/files/shop_stand_pickup.lua" ) item_pickup( e, PLAYER, "" ) return W.made', frames=10)
+    run("book bought", 'W.flags = {} local e = book_shop_item( "quire", 0, GROUND - 8, 2, false ) '
+        'dofile( "mods/witch_notebook/files/shop_stand_pickup.lua" ) item_pickup( e, PLAYER, "" ) '
+        'assert( book_owned( "quire" ), "the bought quire is not theirs" ) return W.made', frames=10)
     for ink in [ink["key"] for ink in lua.eval("INKS").values() if ink["key"] != "ink"]:
         run(f"flask of {ink}", f'return {{ EntityLoad( ink_flask_entity( "{ink}" ), 0, GROUND - 8 ) }}', frames=10)
     # the books: for sale in a Holy Mountain, left by a boss, lying beside the witch at the start, picked up

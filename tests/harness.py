@@ -634,6 +634,8 @@ function CellFactory_GetName( id ) return "water" end
 function AddMaterialInventoryMaterial( id, m, n ) check_material( m, "AddMaterialInventoryMaterial" ) end
 function RemoveMaterialInventoryMaterial() end
 function GetMaterialInventoryMainMaterial() return 3 end
+-- picked up: the item goes into the holder's inventory (a child of theirs)
+function GamePickUpInventoryItem( who, item ) EntityAddChild( who, item ) end
 function GlobalsGetValue( k, d ) local v = W.globals[k] if v == nil then return d or "" end return v end
 function GlobalsSetValue( k, v ) if type( v ) ~= "string" then err( "GlobalsSetValue " .. k .. ": not a string" ) end W.globals[k] = v end
 local seed = 1

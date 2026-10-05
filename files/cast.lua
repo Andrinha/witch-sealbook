@@ -16,6 +16,7 @@ dofile_once( "mods/witch_notebook/files/ink.lua" )
 dofile_once( "mods/witch_notebook/files/strokes.lua" )
 dofile_once( "mods/witch_notebook/files/effects/lib.lua" )
 dofile_once( "mods/witch_notebook/files/manifest.lua" )
+dofile_once( "mods/witch_notebook/files/sheets.lua" ) -- the wiki seals' tiers, for how long they recharge
 
 local SPARK = "data/entities/projectiles/deck/light_bullet.xml" -- a fizzled seal
 local SLOPPY = 0.35                -- keep in sync with SEAL_SLOPPY in seal_spell.lua
@@ -32,7 +33,8 @@ PULL_VAR = "witch_pull" -- strength of the Sign of Pulling on a projectile (beha
 SPIN_VAR = "witch_spin" -- spin of turned signs on a projectile (behaviors/spin.lua)
 -- a book's run globals (books.lua book_var) "active_spell": its active page's spell (notebook.lua), "active_strokes": its
 -- drawing, to light it up in the air
-SPELLBOOK_NEXT_CAST_VAR = "witch_notebook_next_cast" -- on the book: the frame it can cast again
+SPELLBOOK_NEXT_CAST_VAR = "witch_notebook_next_cast" -- on the book: the frame it can cast again ('value_int') and how
+                                                     -- long it waits since the last cast ('value_float', frames)
 LAST_SPELL_VAR = "witch_notebook.last_cast" -- the last spell cast, for the Repetition Seal
 AMPLIFY_VAR = "witch_notebook.amplify" -- casts left that the Amplification Scroll strengthens
 REMOTE_VAR = "witch_notebook.remote" -- the cloak (Sasaran's Cloak) the next spells are cast from
@@ -86,6 +88,45 @@ local function page_spell( key )
 		page_spells[key] = entry and parse_one( entry.spell:match( "^[^&]*" ) ) or false
 	end
 	return page_spells[key] or nil
+end
+
+-- How long a seal recharges after it is cast, beyond the book's own delay (frames): the more it makes, the longer. A
+-- wiki seal by its tier (sheets.lua SHEET_TIER; the forbidden are VII); one of the witch's own by what it makes; the
+-- seals inside it and linked to it add half of theirs. The book in hand shows it under the cursor (notebook.lua).
+SEAL_RECHARGE_BY_TIER = { 0, 20, 45, 80, 130, 200, 300 }
+local RECHARGE_BY_CARRIER = { bolt = 0, orb = 0, hover = 10, nova = 30, cloud = 60, ring = 60, field = 90 }
+local RECHARGE_SCULPTURE = 130 -- a creature of the element, drawn freely
+local RECHARGE_MANIFEST = 45   -- a special sigil's own way, drawn freely
+local RECHARGE_GAME = 45       -- the game's own projectiles: black holes, lasers, lightning
+local RECHARGE_COPY = 6        -- each shot beyond the first that Piercing adds
+local UNLISTED_TIER = 4
+function seal_recharge( spell )
+	local frames = 0
+	if spell.named then
+		local page = page_spell( spell.named )
+		local tier = page and page.forbidden and #SEAL_RECHARGE_BY_TIER or ( SHEET_TIER or {} )[spell.named] or UNLISTED_TIER
+		frames = SEAL_RECHARGE_BY_TIER[tier]
+	elseif spell.shape then
+		frames = RECHARGE_SCULPTURE
+	elseif spell.manifest then
+		frames = RECHARGE_MANIFEST
+	elseif spell.element ~= "" and spell.element ~= "shockwave" then
+		local effect = dictionary_effect( spell.element, spell.form, spell.floats )
+		if effect then
+			local own = ( effect.file or "" ):find( "/carriers/", 1, true ) or effect.carrier == "nova" or effect.carrier == "ring"
+			frames = own and ( RECHARGE_BY_CARRIER[effect.carrier] or 0 ) or RECHARGE_GAME
+			frames = frames + RECHARGE_COPY * math.max( 0, math.floor( ( spell.behaviors or {} ).pierce or 0 ) - 1 )
+		end
+	end
+	for _, list in ipairs( { spell.subs or {}, spell.links or {} } ) do
+		for _, sub in ipairs( list ) do frames = frames + 0.5 * seal_recharge( sub ) end
+	end
+	return math.floor( frames )
+end
+
+-- The book's wait after a cast of 'spell' (frames): its own delay and the seal's recharge, the swift ink shortens both
+function seal_cast_delay( book, spell )
+	return math.floor( ( book.cast_delay + seal_recharge( spell ) ) * ( 1 - ink_haste( spell ) ) )
 end
 
 function misfire_chance( spell )
@@ -544,6 +585,12 @@ local function spawn( ctx, file, x, y, dir_x, dir_y, spell, effect )
 	local tuned = spell_tuning( spell, ctx.power )
 	local float = tuned.float
 
+	-- a splash's drops stay by the seal: they take only a share of its reach and of a shot's damage
+	if effect.splash then
+		local base = DICTIONARY_CARRIER_BASE
+		tuned.lifetime = math.floor( tuned.lifetime * base.splash_reach )
+		tuned.damage, tuned.blast = tuned.damage * base.splash_damage, tuned.blast * base.splash_damage
+	end
 	local comp = EntityGetFirstComponentIncludingDisabled( projectile, "ProjectileComponent" )
 	if comp then
 		ComponentSetValue2( comp, "damage", ComponentGetValue2( comp, "damage" ) + tuned.damage )
@@ -789,11 +836,27 @@ function spellbook_use( item, holder, controls, frame )
 		GlobalsSetValue( BOOK_OPEN_REQUEST_VAR, book.key )
 		return
 	end
-	if not next_var or frame < ComponentGetValue2( next_var, "value_int" ) then return end
+	if not next_var then return end
+	-- a wait longer than the book last set is left from another session (the frame count starts again): it is over
+	local ready = ComponentGetValue2( next_var, "value_int" )
+	if ready - frame > math.max( ComponentGetValue2( next_var, "value_float" ) or 0, book.cast_delay ) then
+		ComponentSetValue2( next_var, "value_int", frame )
+	elseif frame < ready then
+		-- still recharging: the seal only fizzles in the hand
+		local x, y = EntityGetTransform( holder )
+		local ax, ay = ComponentGetValue2( controls, "mAimingVectorNormalized" )
+		for _ = 1, 5 do
+			GameCreateCosmeticParticle( "spark_white", x + ax * HAND_OFFSET, y - 4 + ay * HAND_OFFSET, 1, ax * 20 + Random( -15, 15 ),
+				ay * 20 + Random( -20, 5 ), 0, 0.3, 0.5, false, false, false, false, 0, 0 )
+		end
+		return
+	end
 	-- the quill of water (Wand of Water) draws with the button while it lasts
 	if frame < ( tonumber( GlobalsGetValue( BUSY_VAR, "0" ) ) or 0 ) then return end
-	-- the swift ink casts more often
-	ComponentSetValue2( next_var, "value_int", frame + math.floor( book.cast_delay * ( 1 - ink_haste( parse_spell_data( data ) ) ) ) )
+	-- the stronger the seal, the longer it recharges; the swift ink casts more often
+	local delay = seal_cast_delay( book, parse_spell_data( data ) )
+	ComponentSetValue2( next_var, "value_int", frame + delay )
+	ComponentSetValue2( next_var, "value_float", delay )
 	local x, y = EntityGetTransform( holder )
 	local aim_x, aim_y = ComponentGetValue2( controls, "mAimingVectorNormalized" )
 	local target_x, target_y = ComponentGetValue2( controls, "mMousePosition" )

@@ -42,6 +42,22 @@ local function sign_works( key, element, carrier, own )
 	return dictionary_behavior_works( key, carrier, own )
 end
 
+-- The symbols a seal fails on: their strokes, for the book to mark on the page (seal.trouble, notebook.lua)
+local function trouble( seal, symbols )
+	seal.trouble = {}
+	for _, symbol in ipairs( symbols ) do
+		for _, stroke in ipairs( symbol.strokes or {} ) do seal.trouble[#seal.trouble + 1] = stroke end
+	end
+end
+-- ... the weak half of them
+local function weak_symbols( seal )
+	local weak = {}
+	for _, symbol in ipairs( seal.symbols ) do
+		if symbol.score < ( SEAL_MIN_SCORE + SEAL_GOOD_SCORE ) / 2 then weak[#weak + 1] = symbol end
+	end
+	return weak
+end
+
 -- Returns the spell { element, form, force, focus, spread, range, lifetime, heavy, tilt, push_x, push_y,
 -- stability, precision, behaviors = { key = weight }, shape, manifest, frame, layers, glaives, subs, links,
 -- summary, quality } or nil and an error text
@@ -55,8 +71,12 @@ function compile_spell( seal )
 		else
 			-- Keep ambiguous candidates in the parse so segmentation can finish, but do not silently
 			-- turn them into effects. The player can correct the sign and retry the closed seal.
-			if symbol.size < SIGN_MIN_SIZE then return nil, "A sign is too small" end
+			if symbol.size < SIGN_MIN_SIZE then
+				trouble( seal, { symbol } )
+				return nil, "A sign is too small"
+			end
 			if symbol.score < SEAL_GOOD_SCORE and symbol.margin and symbol.margin < SIGN_MIN_MARGIN then
+				trouble( seal, { symbol } )
 				return nil, "A sign is ambiguous"
 			end
 			signs[#signs + 1] = symbol
@@ -68,7 +88,10 @@ function compile_spell( seal )
 			local least = DICTIONARY_SIGILS[symbol.key].shape and SCULPTURE_ONLY_MIN_SCORE or SPECIAL_ONLY_MIN_SCORE
 			if symbol.score >= least then strong = true; break end
 		end
-		if not strong then return nil, "The sigil is too faint" end
+		if not strong then
+			trouble( seal, specials )
+			return nil, "The sigil is too faint"
+		end
 	end
 	local spell = { force = 0, focus = 0, spread = 0, range = 0, lifetime = 0, heavy = 0 }
 	local frame = seal.frames and seal.frames[1]
@@ -102,6 +125,7 @@ function compile_spell( seal )
 			area = area + sigil.size * sigil.size
 		end
 		if #kinds > 3 or ( #kinds == 3 and not spell.manifest and not spell.shape ) then
+			trouble( seal, sigils )
 			return nil, "Too many elements - the ring will not hold"
 		end
 		local order = {}
@@ -230,6 +254,12 @@ function compile_spell( seal )
 	for _, form in ipairs( FORM_ORDER ) do
 		if ( votes[form] or 0 ) > best_vote then spell.form, best_vote = form, votes[form] end
 	end
+	-- Dispersion held by a sign that keeps it (Stability, Stillness): no wave, a field that stays round the caster - the
+	-- "circle of" an element. A sigil without a sign of form only splashes (dictionary_effect).
+	if spell.form == "dispersion" and ( behaviors.still or 0 ) > 0 then
+		spell.form = "field"
+		behaviors.still = nil
+	end
 	local base = DICTIONARY_ELEMENTS[element]
 	if condense > 0 and base.condensed then element = base.condensed end
 	spell.element = element
@@ -313,9 +343,18 @@ function compile_spell( seal )
 				sigil_count = sigil_count + 1
 			end
 		end
-		if sigil_count > 0 and sigil_quality / sigil_count < MIN_SIGIL_QUALITY then return nil, "The sigil is too imprecise" end
-		if symbol_quality - complexity_cost < MIN_SYMBOL_QUALITY then return nil, "The symbols are too imprecise" end
-		if reading_quality < MIN_READING_QUALITY then return nil, "The seal is too imprecise" end
+		if sigil_count > 0 and sigil_quality / sigil_count < MIN_SIGIL_QUALITY then
+			trouble( seal, sigils )
+			return nil, "The sigil is too imprecise"
+		end
+		if symbol_quality - complexity_cost < MIN_SYMBOL_QUALITY then
+			trouble( seal, weak_symbols( seal ) )
+			return nil, "The symbols are too imprecise"
+		end
+		if reading_quality < MIN_READING_QUALITY then
+			trouble( seal, weak_symbols( seal ) )
+			return nil, "The seal is too imprecise"
+		end
 	end
 
 	spell.summary = spell_summary( spell, carrier )
@@ -479,13 +518,14 @@ end
 function read_spell( strokes )
 	local spell = seal_named_spell( strokes )
 	if spell then return spell end
-	local seal, err = parse_seal( strokes )
+	local seal, err, partial = parse_seal( strokes )
 	if seal then spell, err = compile_spell( seal ) end
 	if not spell then
 		local copy = seal_named_spell( strokes, true )
 		if copy then return copy, nil, seal end
 	end
-	return spell, err, seal
+	-- a seal that fails: the tree as far as it was read (its 'trouble': the strokes it fails on)
+	return spell, err, seal or partial
 end
 
 local SPELL_FIELDS = { "element", "form", "force", "focus", "spread", "range", "lifetime", "heavy", "tilt", "push_x", "push_y",

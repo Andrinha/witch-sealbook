@@ -52,6 +52,7 @@ local FULL_GRIMOIRE_SETTING = "witch_notebook.full_grimoire"
 local BUTTON = {
 	RECALIBRATE = 900002, BACK = 900003, ON = 900004, -- 900001 and 900008: the calibration's (book_mouse.lua)
 	TEAR = 900005, -- and the next one for the right page
+	EDIT = 900300, -- and the next one for the right page
 	WIKI = 900007, ERASER = 900009, RETRY = 900098, CLEAR = 900099,
 	TAB = 900010, -- and the next ones, a section each
 	BOOK = 900100, -- and the next ones, a book each
@@ -141,6 +142,48 @@ local function held_book( player )
 	local inventory = EntityGetFirstComponentIncludingDisabled( player, "Inventory2Component" )
 	local item = inventory and ComponentGetValue2( inventory, "mActiveItem" )
 	if item and item ~= 0 and EntityHasTag( item, BOOK_TAG ) then return book_key_of( item ) end
+end
+
+-- A book in hand still recharging after a seal stronger than a shot: a short bar over the witch's head empties as it
+-- recharges, in the colors of the game's reload bar (book_gfx.lua draws its frame and its fill). It stands in the world,
+-- by the witch, so the screen's size and the game's resolution settings can't move it off. Made once: its fill only
+-- shrinks from the right (no picture changes, nothing to reload). A wait no longer than the book's own delay (a shot)
+-- isn't shown: the bar would blink at every click. cast.lua spellbook_use keeps on the book the frame it can cast
+-- again and how long it waits.
+local RECHARGE_TAG = "witch_recharge_bar"
+local RECHARGE_ABOVE = 24 -- world pixels over the witch's feet
+local function show_recharge( player )
+	local bar = ( EntityGetWithTag( RECHARGE_TAG ) or {} )[1]
+	if bar and not EntityHasTag( bar, RECHARGE_TAG ) then bar = nil end
+	local left, total, delay = 0, 0, 0
+	local inventory = player and EntityGetFirstComponentIncludingDisabled( player, "Inventory2Component" )
+	local item = inventory and ComponentGetValue2( inventory, "mActiveItem" )
+	if item and item ~= 0 and EntityHasTag( item, BOOK_TAG ) then
+		delay = BOOKS[book_key_of( item )].cast_delay
+		for _, comp in ipairs( EntityGetComponentIncludingDisabled( item, "VariableStorageComponent" ) or {} ) do
+			if ComponentGetValue2( comp, "name" ) == SPELLBOOK_NEXT_CAST_VAR then
+				left = ComponentGetValue2( comp, "value_int" ) - GameGetFrameNum()
+				total = ComponentGetValue2( comp, "value_float" ) or 0
+			end
+		end
+	end
+	if left <= 0 or total <= delay or left > total then
+		if bar then EntityKill( bar ) end
+		return
+	end
+	if not bar then
+		bar = EntityCreateNew( RECHARGE_TAG )
+		EntityAddTag( bar, RECHARGE_TAG )
+		-- the bar's place is the inside's left end: the frame a pixel round it, the fill from there
+		EntityAddComponent2( bar, "SpriteComponent", { image_file = BOOK_RECHARGE_FRAME, offset_x = 1, offset_y = 1, z_index = -60,
+			update_transform_rotation = false } )
+		EntityAddComponent2( bar, "SpriteComponent", { _tags = "witch_fill", image_file = BOOK_RECHARGE_FILL, z_index = -61,
+			has_special_scale = true, special_scale_x = 1, special_scale_y = 1, update_transform_rotation = false } )
+	end
+	local fill = EntityGetFirstComponentIncludingDisabled( bar, "SpriteComponent", "witch_fill" )
+	if fill then ComponentSetValue2( fill, "special_scale_x", left / total ) end
+	local x, y = EntityGetTransform( player )
+	EntitySetTransform( bar, x - BOOK_RECHARGE_W / 2, y - RECHARGE_ABOVE )
 end
 
 -- which book the configured key opens: the one in hand, else the one opened last, else the first the witch carries
@@ -464,6 +507,21 @@ local function tear_out( i )
 	cur.spread = math.min( cur.spread, last_spread() )
 end
 
+-- A drawn seal goes back to a draft: its lines stay on the page to be erased or added to, and it awakens again when the
+-- ring is closed (or with "Try seal" if it still is). Until then the book doesn't cast it.
+local function edit_seal( i )
+	local seal = cur.seals[i]
+	if not seal or seal.sheet ~= "" then return end
+	select_edit_page( cur.def.intro + i )
+	seal.draft, seal.fresh, seal.parts = "1", "", nil
+	seal.point_count = 0
+	for _, stroke in ipairs( seal.strokes ) do seal.point_count = seal.point_count + #stroke end
+	seal.failed = seal_ring_closed( seal.strokes )
+	if cur.active == i then set_active( cur, 0 ) end
+	save_seal( cur, i )
+	cur.eraser_selected = false
+end
+
 ---- turning the pages ----
 
 local function turning() return #flips > 0 or queued ~= 0 end
@@ -672,12 +730,25 @@ local function finish_sigil()
 	local spell, err, seal = read_spell( cur.edit.strokes )
 	err = too_great( spell ) or err
 	if err and spell then spell = nil end
+	-- the strokes it couldn't read stay marked until the seal is read again
+	for _, stroke in ipairs( cur.edit.strokes ) do stroke.trouble = nil end
+	cur.edit.marked = nil
+	if not spell and seal and seal.trouble and #seal.trouble > 0 then
+		for _, stroke in ipairs( seal.trouble ) do stroke.trouble = true end
+		cur.edit.marked = true
+	end
 	record_drawing( spell and ( spell.summary .. " / " .. ( spell.data or serialize_spell( spell ) ) ) or err )
 	if spell then
 		-- the seal stays on its page, a blank page follows; on it the seal awakens
 		local tree = seal or parse_seal( cur.edit.strokes )
 		local state = awaken_new( cur.edit.strokes, tree, spell.element )
 		local i = add_seal( spell )
+		-- what its parts were read as, to show them under the mouse (draw_parts); a wiki's seal as its pages are told
+		if tree then
+			local entry = spell.named and GRIMOIRE_BY_KEY and GRIMOIRE_BY_KEY[spell.named]
+			cur.seals[i].parts = entry and seal_parts( cur.edit.strokes, tree, entry ) or tree.symbols
+			cur.seals[i].parts_of, cur.seals[i].parts_data = cur.seals[i].strokes, cur.seals[i].spell:match( "^[^&]*" ) or ""
+		end
 		awakening = { page = cur.def.intro + i, state = state }
 		if cur.edit == cur.blank or cur.edit == cur.blank_next then clear_page() end
 		select_edit_page( blank_page() )
@@ -967,6 +1038,11 @@ local function is_active_face( face )
 	return cur.active > 0 and face == cur.def.intro + cur.active
 end
 
+-- a seal that failed just now is drawn in red - only the strokes it fails on, when it knows them (they stay red)
+local function failed_color( face )
+	return result and face == cur.edit_face and not cur.edit.marked and ERROR_COLOR or nil
+end
+
 -- what is drawn on a face, onto any surface (a turning page draws its faces with it)
 local function draw_face_content( s, face )
 	if face < 0 then return draw_leaf_back( s, -face ) end
@@ -976,12 +1052,146 @@ local function draw_face_content( s, face )
 	if face <= cur.def.intro then
 		if face <= FRONT_PAGES then P.front_page( s, face, cur.key, cur.look ) else P.hint_page( s, face - FRONT_PAGES ) end
 	elseif cur.seals[i] and cur.seals[i].draft == "1" then
-		draw_strokes( s, cur.seals[i].strokes, result and face == cur.edit_face and ERROR_COLOR or nil )
+		draw_strokes( s, cur.seals[i].strokes, failed_color( face ) )
 	elseif cur.seals[i] then
 		draw_seal_content( s, i )
 	elseif editable_page( face ) then
-		draw_strokes( s, editable_page( face ).strokes, result and face == cur.edit_face and ERROR_COLOR or nil )
+		draw_strokes( s, editable_page( face ).strokes, failed_color( face ) )
 	end
+end
+
+-- A seal under the mouse - drawn, pasted in from a sheet or a page of the grimoire: the part of it nearest the mouse is
+-- lit and what it was read as is written under it, with what it does in this seal. A drawn seal's sign that does
+-- nothing there is told faded (seal_spell.lua leaves it out); a wiki's seal is cast as a whole, its parts are told by
+-- what they mean. Not on the quire's small leaves.
+local PART_REACH = 7                    -- page units: a part's line this close to the mouse is the one under it
+local PART_GLOW = { 0.78, 0.5, 0.08 }   -- the part under the mouse, drawn over in this
+local PART_FADED = { 0.45, 0.42, 0.38 } -- what a sign that does nothing here is told in
+local PART_BACK = { 0.95, 0.91, 0.82 }  -- the paper behind the words, so the lines under them don't show through
+-- what a part does in a seal of 'data' (its behaviors 'acts'), or nil: nothing; 'named': a wiki's seal - a part that
+-- adds nothing of its own to the spell is told by what it means
+local function part_does( sym, data, acts, named )
+	if sym.kind == "sigil" then
+		local def = DICTIONARY_SIGILS[sym.key] or {}
+		if def.manifest or def.shape then return def.hint or "its own way" end
+		return "the element"
+	end
+	local def = DICTIONARY_SIGNS[sym.key]
+	if not def then return nil end
+	local way = sym.inverted and def.invertible ~= false and def.inverted or def
+	if way.behavior == "still" and data:find( "form=field", 1, true ) then return "holds the wave round you: a field" end
+	if way.form then return way == def and def.hint or DICTIONARY_FORMS[way.form] end
+	if way.condense then return way.condense > 0 and "compresses the element" or "loosens the element" end
+	if way.behavior == "regions" then return def.hint end
+	local b = way.behavior and acts[way.behavior] and DICTIONARY_BEHAVIOR[way.behavior]
+	if b then return b.text or def.hint end
+	if named then
+		local meant = way.behavior and DICTIONARY_BEHAVIOR[way.behavior]
+		return meant and meant.text or def.hint
+	end
+end
+
+-- The parts of a wiki's seal on its grimoire page or sheet: read once by tools/make_grimoire_parts.py (reading a page
+-- here would take seconds), over its page's strokes; kept with the entry
+local function wiki_parts( entry )
+	if entry.parts then return entry.parts end
+	if not GRIMOIRE_PARTS then dofile_once( "mods/witch_notebook/files/grimoire_parts.lua" ) end
+	local strokes, parts = wiki_page_strokes( entry ), {}
+	for item in ( GRIMOIRE_PARTS[entry.key] or "" ):gmatch( "[^;]+" ) do
+		local kind, key, inverted, ids = item:match( "^(%a+):([%w_%-]+):(%d):([%d,]+)$" )
+		if kind then
+			local part = { kind = kind, key = key, inverted = inverted == "1", strokes = {} }
+			for i in ids:gmatch( "%d+" ) do part.strokes[#part.strokes + 1] = strokes[tonumber( i )] end
+			parts[#parts + 1] = part
+		end
+	end
+	entry.parts = parts
+	return parts
+end
+
+-- The parts of a seal drawn in the book: the reading made when it awoke (finish_sigil); a page from before (a saved run)
+-- is read again - kept only if it reads as the same element, its saved points being rounded. A wiki's seal drawn by
+-- hand is told the way its grimoire page is (seal.lua seal_parts).
+local function drawn_parts( seal, data )
+	if seal.parts_of == seal.strokes and seal.parts_data == data then return seal.parts end
+	local named = data:match( "named=([%w_]+)" )
+	local entry = named and GRIMOIRE_BY_KEY and GRIMOIRE_BY_KEY[named]
+	local ok, tree, _, partial = pcall( parse_seal, seal.strokes )
+	tree = ok and ( tree or ( entry and partial ) ) or nil
+	local parts = {}
+	if entry then
+		parts = seal_parts( seal.strokes, tree, entry )
+	elseif tree then
+		local same = compile_spell( tree )
+		if same and same.element == data:match( "element=([%w_]+)" ) then parts = tree.symbols end
+	end
+	seal.parts, seal.parts_of, seal.parts_data = parts, seal.strokes, data
+	return parts
+end
+
+-- 'parts' of a seal of spell 'data' on the surface 's', the mouse at 'px', 'py' on the page; 'frame': where the parts'
+-- strokes lie on the page ({ c, k, to }: page = to + ( point - c ) * k; nil: page units); 'named': a wiki's seal, its
+-- name - a part of kind 'mark' (grimoire_parts.lua) is one of its own glyphs, not in the book's lists
+local function draw_parts( s, parts, data, px, py, frame, named )
+	if cur.def.round or #parts == 0 then return end
+	local c, k, to = 0, 1, 0
+	if frame then c, k, to = frame.c, frame.k, frame.to end
+	local gx, gy = c + ( px - to ) / k, c + ( py - to ) / k
+	-- the part whose line passes nearest the mouse
+	local part, nearest = nil, ( PART_REACH / k ) ^ 2
+	for _, sym in ipairs( parts ) do
+		for _, stroke in ipairs( sym.strokes or {} ) do
+			for _, p in ipairs( stroke ) do
+				local d = ( p.x - gx ) ^ 2 + ( p.y - gy ) ^ 2
+				if d < nearest then part, nearest = sym, d end
+			end
+		end
+	end
+	if not part then return end
+	local acts = {}
+	for key in ( data:match( "b=([^;]*)" ) or "" ):gmatch( "(%w+):" ) do acts[key] = true end
+	local name
+	if part.kind == "mark" then
+		name = "A sign of " .. ( type( named ) == "string" and ( named .. "'s own" ) or "this seal's own" )
+	elseif part.kind == "sigil" then
+		local def = DICTIONARY_SIGILS[part.key] or {}
+		local element = def.element and DICTIONARY_ELEMENTS[def.element]
+		name = def.name or element and element.name
+	else
+		local def = DICTIONARY_SIGNS[part.key]
+		name = def and ( def.name .. ( part.inverted and def.inverted and " (facing out)" or "" ) )
+	end
+	if not name then return end
+	local does = part.kind == "mark" or part_does( part, data, acts, named )
+	local lines = { part.kind == "mark" and name or ( name .. ": " .. ( does or "does nothing in this seal" ) ) }
+	D.strokes( s, part.strokes, function() return PART_GLOW, 1 end, nil, 24, nil, frame )
+	local minx, miny, maxx, maxy = math.huge, math.huge, -math.huge, -math.huge
+	for _, stroke in ipairs( part.strokes ) do
+		for _, p in ipairs( stroke ) do
+			minx, maxx = math.min( minx, p.x ), math.max( maxx, p.x )
+			miny, maxy = math.min( miny, p.y ), math.max( maxy, p.y )
+		end
+	end
+	minx, maxx, miny, maxy = to + ( minx - c ) * k, to + ( maxx - c ) * k, to + ( miny - c ) * k, to + ( maxy - c ) * k
+	local size = view.size
+	-- too wide for the page: the name over what it does
+	if GuiGetTextDimensions( gui, lines[1] ) > size - 6 and part.kind ~= "mark" then
+		lines = { name .. ":", does or "does nothing in this seal" }
+	end
+	local h = 11 * #lines
+	local y = maxy + 3
+	if y + h > size - 3 then y = miny - h - 1 end -- no room under it: over it
+	for i, line in ipairs( lines ) do
+		local w = GuiGetTextDimensions( gui, line )
+		local x = math.max( 2, math.min( size - w - 2, ( minx + maxx - w ) / 2 ) )
+		local ly = y + 11 * ( i - 1 )
+		s:image( x - 2, ly - 1, NOTEBOOK_INK_IMAGE, 19, PART_BACK, 0.95, ( w + 4 ) / 2, 5.5 )
+		s:text( x, ly, line, does and P.TEXT_COLOR or PART_FADED, 18 )
+	end
+end
+-- where a grimoire's page lies on the book's page (book_pages.lua P.strokes)
+local function grimoire_frame( scale )
+	return { c = SEAL_PAGE_SIZE / 2, k = view.size / SEAL_PAGE_SIZE * ( scale or 1 ), to = view.size / 2 }
 end
 
 -- A face lying still: its paper and what is on it; with the mouse over it, what it is. 'still': the page lies under a
@@ -1008,7 +1218,13 @@ local function draw_page( face, pos, mx, my, still )
 		end
 		if still then return end
 		local over = over_page( pos, mx, my )
-		if over then hover_entry = entry end
+		if over then
+			hover_entry = entry
+			if not entry.test then
+				draw_parts( s, wiki_parts( entry ), ( entry.spell or "" ):match( "^[^&]*" ) or "", mx - pos.x, my - pos.y, grimoire_frame(),
+					entry.name )
+			end
+		end
 		if over and entry.key ~= cur.active_wiki then
 			D.text( label_x, label.y, ( full_grimoire() or cur.def.test ) and "LMB - choose" or "learned", NOTE_COLOR )
 		end
@@ -1039,7 +1255,15 @@ local function draw_page( face, pos, mx, my, still )
 		local function sentence( str ) return str:find( "[%.!?]$" ) and str or ( str .. "." ) end
 		hover_text = sentence( entry and entry.effect or seal.name ) .. ( seal.quality ~= "" and ( " " .. sentence( seal.quality ) ) or "" )
 			.. ( inks and ( " Ink: " .. inks .. "." ) or "" )
-		if not entry then hover_seal = seal end
+		local data = seal.spell:match( "^[^&]*" ) or ""
+		if entry then
+			draw_parts( s, wiki_parts( entry ), data, mx - pos.x, my - pos.y, grimoire_frame( cur.def.sheet_scale ), entry.name )
+		else
+			hover_seal = seal
+			local named = data:match( "named=([%w_]+)" )
+			named = named and GRIMOIRE_BY_KEY and GRIMOIRE_BY_KEY[named]
+			draw_parts( s, drawn_parts( seal, data ), data, mx - pos.x, my - pos.y, nil, named and named.name )
+		end
 	end
 	local row_y = label.y + ( view.labels and 11 or 0 )
 	if seal.fresh == "1" then
@@ -1051,6 +1275,16 @@ local function draw_page( face, pos, mx, my, still )
 	GuiColorSetForNextWidget( gui, c[1], c[2], c[3], 1 )
 	local tear_x = view.labels and label.x or pos.x + size - GuiGetTextDimensions( gui, text )
 	local tear_y = view.labels and row_y + 11 or row_y
+	if seal.sheet == "" then
+		local edit_w = GuiGetTextDimensions( gui, "[edit]" )
+		local edit_x = view.labels and tear_x + GuiGetTextDimensions( gui, text ) + 6 or tear_x - edit_w - 6
+		GuiColorSetForNextWidget( gui, 0.55, 0.55, 0.55, 1 )
+		if GuiButton( gui, BUTTON.EDIT + ( face + 1 ) % 2, edit_x, tear_y, "[edit]" ) then
+			tear = nil
+			edit_seal( i )
+			return
+		end
+	end
 	if GuiButton( gui, BUTTON.TEAR + ( face + 1 ) % 2, tear_x, tear_y, text ) then
 		if asking then
 			tear = nil
@@ -1689,6 +1923,7 @@ function notebook_update()
 	paste_pending_sheets()
 
 	local player = get_player()
+	show_recharge( player )
 	local carried = carried_books( player )
 	local open_key = book_open_key()
 	if player and shown_open_key ~= open_key then

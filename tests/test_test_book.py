@@ -172,6 +172,7 @@ class Notes(unittest.TestCase):
                     local r = ComponentObjectGetValue2( p, "config_explosion", "explosion_radius" )
                     out.shots, out.lasts, out.speed = out.shots + 1, ComponentGetValue2( p, "lifetime" ), math.sqrt( vx * vx + vy * vy )
                     out.generic, out.blast = ComponentGetValue2( p, "damage" ), r and r > 0 and r or nil
+                    out.splash = e.file:find( "/splash_", 1, true ) ~= nil
                 elseif a then
                     out.radius, out.dpf = ComponentGetValue2( a, "circle_radius" ), ComponentGetValue2( a, "damage_per_frame" )
                     out.lasts = ComponentGetValue2( EntityGetFirstComponentIncludingDisabled( id, "LifetimeComponent" ), "lifetime" )
@@ -179,7 +180,8 @@ class Notes(unittest.TestCase):
             end
             return out
         end''')
-        every = self.mod.eval("DICTIONARY_CARRIER_BASE")["field_every"]
+        base = self.mod.eval("DICTIONARY_CARRIER_BASE")
+        every = base["field_every"]
         wrong, checked = [], 0
         for p in self.pages:
             n = numbers(p["spell"])
@@ -190,7 +192,9 @@ class Notes(unittest.TestCase):
             pairs = [("lasts", n["lasts"], m["lasts"]), ("speed", n["speed"] or 0, m["speed"] or 0), ("blast", n["blast"], m["blast"]),
                      ("radius", n["radius"], m["radius"])]
             if n["hit"] is not None:
-                pairs.append(("hit", n["hit"], (m["generic"] + sum((look["damage"] or {}).values())) * 25))
+                # a splash's drop deals a share of the element's damage (carriers.lua)
+                share = base["splash_damage"] if m["splash"] else 1
+                pairs.append(("hit", n["hit"], (m["generic"] + share * sum((look["damage"] or {}).values())) * 25))
             if n["dps"] is not None:
                 pairs.append(("dps", n["dps"], m["dpf"] * 60 / every * 25))
             if n["shots"] is not None:
@@ -223,6 +227,22 @@ class DrawnSeals(unittest.TestCase):
         text = " ".join(lua.eval("said").values())
         self.assertIn("A shot of fire flies from the hand", text)
         self.assertIn("hits for", text)
+        # the part under the mouse: what it was read as and what it does, written under it - one part at a time
+        named = set()
+        for dx in range(-40, 41, 4):
+            for dy in range(-60, 61, 4):
+                G.mouse[1], G.mouse[2] = view.back.x + 90 + dx, view.back.y + 90 + dy
+                lua.execute("said = {}")
+                G.notebook_update()
+                parts = [t for t in lua.eval("said").values() if t.startswith(("Fire:", "Column:"))]
+                self.assertLessEqual(len(parts), 1, parts)
+                named.update(parts)
+        self.assertEqual({"Fire: the element", "Column: flies"}, named)
+        # ... over the ring's edge, away from any part: no part named
+        G.mouse[1], G.mouse[2] = view.back.x + 90, view.back.y + 2
+        lua.execute("said = {}")
+        G.notebook_update()
+        self.assertFalse([t for t in lua.eval("said").values() if t.startswith(("Fire:", "Column:"))])
         # the inks a seal is drawn with: the blood's numbers are its average, the golden glows
         notes = lua.eval("spell_notes")
         plain = "element=fire;form=column;force=0.6;focus=0.7;spread=-0.4;range=0.4;lifetime=0;stability=1;precision=1;b=thrust:2"
