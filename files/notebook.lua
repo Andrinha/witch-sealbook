@@ -6,7 +6,7 @@
 -- Draw with the left mouse button - a ring, a sigil in the center and signs around it (see seal.lua). As in Witch Hat
 -- Atelier the seal awakens when its ring closes: draw the ring with a gap, the symbols inside, then close the gap - the
 -- seal stays on its page and becomes the book's active one. A click on a seal's page makes it active: the book in hand
--- casts it, with no limit (spellbook.lua). A/D, the arrows or the mouse wheel turn the pages; the eraser or right click
+-- casts it, with no limit (spellbook.lua). A/D (configurable), the arrows or the mouse wheel turn the pages; the eraser or right click
 -- removes part of a drawing, and the clear button empties the page. The configured key, Esc or a click outside closes it.
 -- Drawing spends witch ink (ink.lua): the bottles beside the book are the inks in the flasks, a click picks the one to
 -- draw with, and a seal takes on the inks it is drawn with. Sheets with seals found in the world (sheets.lua) are
@@ -32,8 +32,7 @@ local encode_strokes, encode_inks, thin_strokes = strokes_encode, strokes_encode
 local is_learned, learn = book_seal_known, book_learn_seal -- books.lua
 local draw_strokes, centered_on, draw_bottle, paper_color = P.strokes, P.centered, P.bottle, P.paper_color
 
-local KEYS_BACK = { 4, 80 }     -- Key_a, Key_LEFT
-local KEYS_ON = { 7, 79 }       -- Key_d, Key_RIGHT
+local KEY_LEFT, KEY_RIGHT = 80, 79 -- turn the pages besides the configured keys (book_turn_keys)
 local MOUSE_LEFT = 1            -- data/scripts/debug/keycodes.lua: Mouse_left
 local MOUSE_RIGHT = 2           -- Mouse_right
 local WHEEL_UP, WHEEL_DOWN = 4, 5 -- Mouse_wheel_up, Mouse_wheel_down
@@ -1812,8 +1811,10 @@ local function draw_book( mx, my, clicked, carried )
 	-- turning the pages, what to do, the ink, what is under the mouse
 	local foot = view.foot
 	local can_back, can_on = cur.spread > 1, cur.spread < last_spread()
-	local back_label, on_label = "< [A]", "[D] >"
-	if cur.def.round then back_label, on_label = "[A] Flip down", "[D] Flip up" end
+	local turn_back, turn_on = book_turn_keys()
+	local back_name, on_name = book_key_name( turn_back ), book_key_name( turn_on )
+	local back_label, on_label = "< [" .. back_name .. "]", "[" .. on_name .. "] >"
+	if cur.def.round then back_label, on_label = "[" .. back_name .. "] Flip down", "[" .. on_name .. "] Flip up" end
 	if foot.grouped then D.text( foot.x, foot.y - 12, "Pages", NOTE_COLOR ) end
 	GuiColorSetForNextWidget( gui, GREY[1], GREY[2], GREY[3], can_back and 1 or 0.35 )
 	if GuiButton( gui, BUTTON.BACK, foot.x, foot.y, back_label ) and can_back then turn_pages( -1 ) end
@@ -1990,8 +1991,9 @@ function notebook_update()
 	end
 
 	-- a key assigned to open the book closes it instead of turning a page
-	if any_key( KEYS_BACK, open_key ) or InputIsMouseButtonJustDown( WHEEL_UP ) then turn_pages( -1 ) end
-	if any_key( KEYS_ON, open_key ) or InputIsMouseButtonJustDown( WHEEL_DOWN ) then turn_pages( 1 ) end
+	local turn_back, turn_on = book_turn_keys()
+	if any_key( { turn_back, KEY_LEFT }, open_key ) or InputIsMouseButtonJustDown( WHEEL_UP ) then turn_pages( -1 ) end
+	if any_key( { turn_on, KEY_RIGHT }, open_key ) or InputIsMouseButtonJustDown( WHEEL_DOWN ) then turn_pages( 1 ) end
 	if tear then
 		tear.frames = tear.frames - 1
 		if tear.frames <= 0 then tear = nil end

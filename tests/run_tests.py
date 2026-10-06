@@ -1356,6 +1356,29 @@ def test_open_rmb_and_ad_binds():
     return rmb_off and rmb_on and d_closes
 
 
+def test_turn_keys_setting():
+    """The keys that turn pages come from the settings; the arrows still work, and the open key never turns a page."""
+    def turned(back_key, on_key, back_setting=None, on_setting=None):
+        """(a press of back_key turns a page back, then a press of on_key turns it on again)"""
+        lua = load_mod(); G = lua.globals()
+        if back_setting: G.settings["witch_notebook.turn_back_key"] = back_setting
+        if on_setting: G.settings["witch_notebook.turn_on_key"] = on_setting
+        toggle_book(G)
+        for _ in range(150): G.notebook_update()  # a new book opens on its blank page, the last spread
+        sides = [G.notebook_view()[1]]
+        for key in (back_key, on_key):
+            G.pressed[key] = True; G.notebook_update(); G.pressed[key] = False
+            for _ in range(80): G.notebook_update()
+            sides.append(G.notebook_view()[1])
+        return sides[1] != sides[0], sides[2] == sides[0]
+    default = turned(4, 7) == (True, True)
+    old_ignored = turned(4, 7, 20, 21)[0] is False
+    moved = turned(20, 21, 20, 21) == (True, True)
+    arrows = turned(80, 79, 20, 21) == (True, True)
+    print(f"  A/D turn by default {default}; A ignored after moving to Q/W {old_ignored}, Q/W turn {moved}, arrows {arrows}")
+    return default and old_ignored and moved and arrows
+
+
 def test_open_key_setting():
     """The mod settings button captures a key, supports cancellation and resets to B."""
     lua = bare_runtime()
@@ -2239,6 +2262,7 @@ def main():
     ok_ink &= test_right_click_open()
     ok_ink &= test_open_key_setting()
     ok_ink &= test_open_rmb_and_ad_binds()
+    ok_ink &= test_turn_keys_setting()
     print("click outside:")
     ok_ink &= test_click_outside()
     print("inks:")

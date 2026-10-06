@@ -5,7 +5,7 @@ dofile( "data/scripts/lib/mod_settings.lua" )
 -- function hid every setting after the book key), hence the key names are kept here as well as in files/book_key.lua.
 local mod_id = "witch_notebook"
 mod_settings_version = 1
-local choosing_open_key = false
+local choosing_key_id -- the key setting waiting for a key press
 
 local KEY_NAMES = {}
 for code = 4, 29 do KEY_NAMES[code] = string.char( string.byte( "A" ) + code - 4 ) end
@@ -24,29 +24,30 @@ for code, name in pairs( {
 	[87] = "Numpad +", [88] = "Numpad Enter", [98] = "Numpad 0", [99] = "Numpad .",
 } ) do KEY_NAMES[code] = name end
 
-local function open_key_setting_ui( mod_id, gui, in_main_menu, im_id, setting )
+local function key_setting_ui( mod_id, gui, in_main_menu, im_id, setting )
 	local id = mod_setting_get_id( mod_id, setting )
 	local code = tonumber( ( ModSettingGetNextValue( id ) ) ) or setting.value_default
-	local label = choosing_open_key and "Press a key (Esc to cancel)"
+	local choosing = choosing_key_id == setting.id
+	local label = choosing and "Press a key (Esc to cancel)"
 		or ( setting.ui_name .. ": " .. ( KEY_NAMES[code] or KEY_NAMES[setting.value_default] ) )
 	local clicked, right_clicked = GuiButton( gui, im_id, mod_setting_group_x_offset, 0, label )
 	if right_clicked then
-		choosing_open_key = false
+		choosing_key_id = nil
 		ModSettingSetNextValue( id, setting.value_default, false )
-	elseif choosing_open_key then
+	elseif choosing then
 		if InputIsKeyJustDown( 41 ) then -- Escape cancels binding
-			choosing_open_key = false
+			choosing_key_id = nil
 		else
 			for key in pairs( KEY_NAMES ) do
 				if InputIsKeyJustDown( key ) then
 					ModSettingSetNextValue( id, key, false )
-					choosing_open_key = false
+					choosing_key_id = nil
 					break
 				end
 			end
 		end
 	elseif clicked then
-		choosing_open_key = true
+		choosing_key_id = setting.id
 	end
 	mod_setting_tooltip( mod_id, gui, in_main_menu, setting )
 end
@@ -55,10 +56,26 @@ mod_settings = {
 	{
 		id = "open_key",
 		ui_name = "Open / close book",
-		ui_description = "Click, then press a key. Right-click to reset to B. Esc cancels. A/D and arrows turn pages unless assigned to open the book.",
+		ui_description = "Click, then press a key. Right-click to reset to B. Esc cancels.\nA key that opens the book does not turn pages.",
 		value_default = 5,
 		scope = MOD_SETTING_SCOPE_RUNTIME,
-		ui_fn = open_key_setting_ui,
+		ui_fn = key_setting_ui,
+	},
+	{
+		id = "turn_back_key",
+		ui_name = "Turn page back",
+		ui_description = "Click, then press a key. Right-click to reset to A. Esc cancels.\nThe left arrow and the mouse wheel turn pages too.",
+		value_default = 4,
+		scope = MOD_SETTING_SCOPE_RUNTIME,
+		ui_fn = key_setting_ui,
+	},
+	{
+		id = "turn_on_key",
+		ui_name = "Turn page on",
+		ui_description = "Click, then press a key. Right-click to reset to D. Esc cancels.\nThe right arrow and the mouse wheel turn pages too.",
+		value_default = 7,
+		scope = MOD_SETTING_SCOPE_RUNTIME,
+		ui_fn = key_setting_ui,
 	},
 	{
 		id = "open_rmb",

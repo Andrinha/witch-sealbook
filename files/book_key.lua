@@ -20,9 +20,18 @@ for code = 58, 69 do KEY_NAMES[code] = "F" .. ( code - 57 ) end
 for code = 89, 97 do KEY_NAMES[code] = "Numpad " .. ( code - 88 ) end
 for code, name in pairs( OTHER_KEYS ) do KEY_NAMES[code] = name end
 
+local function key_setting( id, default )
+	local code = tonumber( ModSettingGet( "witch_notebook." .. id ) )
+	return code and KEY_NAMES[code] and code or default
+end
+
 function book_open_key()
-	local code = tonumber( ModSettingGet( BOOK_OPEN_KEY_SETTING ) )
-	return code and KEY_NAMES[code] and code or DEFAULT_OPEN_KEY
+	return key_setting( "open_key", DEFAULT_OPEN_KEY )
+end
+
+-- the keys that turn the pages back and on (the arrows always turn them too)
+function book_turn_keys()
+	return key_setting( "turn_back_key", 4 ), key_setting( "turn_on_key", 7 ) -- A, D
 end
 
 -- RMB with a book in hand opens it (on unless the setting is switched off)
@@ -32,6 +41,10 @@ end
 
 function book_open_key_name( code )
 	return KEY_NAMES[code or book_open_key()] or KEY_NAMES[DEFAULT_OPEN_KEY]
+end
+
+function book_key_name( code )
+	return KEY_NAMES[code] or "?"
 end
 
 function book_open_key_hint()
