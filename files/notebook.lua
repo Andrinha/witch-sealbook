@@ -337,7 +337,7 @@ local function name_book_items( st )
 	local entry = st.active == 0 and wiki_lookup( st, st.active_wiki )
 	local base = st.def.name
 	local name = seal and ( base .. ": " .. seal.name ) or entry and ( base .. ": " .. entry.name ) or base
-	local hint = "RMB in hand or " .. book_open_key_hint()
+	local hint = book_open_hint()
 	local description = seal and ( seal.quality .. ". LMB - cast, " .. hint .. " - open the book." )
 		or entry and ( ( entry.test and "A test seal" or "A learned seal" ) .. ". LMB - cast, " .. hint .. " - open the book." )
 		or ( st.def.about .. " " .. hint .. " - open it and draw a seal." )
@@ -1891,9 +1891,9 @@ function notebook_on_pause()
 	if is_open then close_notebook( get_player() ) end
 end
 
-local function any_key( keys )
+local function any_key( keys, except )
 	for _, key in ipairs( keys ) do
-		if InputIsKeyJustDown( key ) then return true end
+		if key ~= except and InputIsKeyJustDown( key ) then return true end
 	end
 	return false
 end
@@ -1926,9 +1926,11 @@ function notebook_update()
 	show_recharge( player )
 	local carried = carried_books( player )
 	local open_key = book_open_key()
-	if player and shown_open_key ~= open_key then
+	local open_rmb = book_open_rmb()
+	local open_binds = open_key .. ( open_rmb and "+rmb" or "" )
+	if player and shown_open_key ~= open_binds then
 		for key in pairs( carried ) do name_book_items( load_book( key ) ) end
-		shown_open_key = open_key
+		shown_open_key = open_binds
 	end
 	local requested = GlobalsGetValue( BOOK_OPEN_REQUEST_VAR, "" )
 	if requested ~= "" then GlobalsSetValue( BOOK_OPEN_REQUEST_VAR, "" ) end
@@ -1939,7 +1941,7 @@ function notebook_update()
 			local key = book_to_open( player, carried )
 			if key then open_notebook( key ) end
 		end
-	elseif player and not is_open and not wait_release and not GameIsInventoryOpen()
+	elseif player and open_rmb and not is_open and not wait_release and not GameIsInventoryOpen()
 		and InputIsMouseButtonJustDown( MOUSE_RIGHT ) then
 		local key = book_to_open( player, carried, true )
 		if key then open_notebook( key ) end
@@ -1987,8 +1989,9 @@ function notebook_update()
 		end
 	end
 
-	if any_key( KEYS_BACK ) or InputIsMouseButtonJustDown( WHEEL_UP ) then turn_pages( -1 ) end
-	if any_key( KEYS_ON ) or InputIsMouseButtonJustDown( WHEEL_DOWN ) then turn_pages( 1 ) end
+	-- a key assigned to open the book closes it instead of turning a page
+	if any_key( KEYS_BACK, open_key ) or InputIsMouseButtonJustDown( WHEEL_UP ) then turn_pages( -1 ) end
+	if any_key( KEYS_ON, open_key ) or InputIsMouseButtonJustDown( WHEEL_DOWN ) then turn_pages( 1 ) end
 	if tear then
 		tear.frames = tear.frames - 1
 		if tear.frames <= 0 then tear = nil end

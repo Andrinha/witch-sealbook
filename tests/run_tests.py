@@ -1335,6 +1335,27 @@ def test_right_click_open():
     return all_books and inventory_ignored and dropped_ignored and preserved and frozen and released and still_open and erased
 
 
+def test_open_rmb_and_ad_binds():
+    """RMB can be switched off; A or D assigned as the open key closes the book without turning a page."""
+    lua = load_mod(); lua.execute(CARRY_ALL); G = lua.globals()
+    G.held_item = 11
+    G.settings["witch_notebook.open_rmb"] = False
+    G.right_down = G.right_just_down = True; G.notebook_update()
+    G.right_down = G.right_just_down = False; G.notebook_update()
+    rmb_off = G.notebook_view() is None
+    G.settings["witch_notebook.open_rmb"] = True
+    G.right_down = G.right_just_down = True; G.notebook_update()
+    G.right_down = G.right_just_down = False; G.notebook_update()
+    rmb_on = G.notebook_view() is not None
+    toggle_book(G)
+    open_book(G, to_blank=False)
+    G.settings["witch_notebook.open_key"] = 7  # D
+    G.pressed[7] = True; G.notebook_update(); G.pressed[7] = False
+    d_closes = G.notebook_view() is None
+    print(f"  RMB off ignores the click {rmb_off}, on opens {rmb_on}; D as open key closes {d_closes}")
+    return rmb_off and rmb_on and d_closes
+
+
 def test_open_key_setting():
     """The mod settings button captures a key, supports cancellation and resets to B."""
     lua = bare_runtime()
@@ -2217,6 +2238,7 @@ def main():
     ok_ink &= test_open_book_controls()
     ok_ink &= test_right_click_open()
     ok_ink &= test_open_key_setting()
+    ok_ink &= test_open_rmb_and_ad_binds()
     print("click outside:")
     ok_ink &= test_click_outside()
     print("inks:")

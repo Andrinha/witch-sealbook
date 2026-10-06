@@ -18,8 +18,8 @@ Open the spellbook and draw a seal: a [b]ring[/b], an [b]element sigil[/b] in th
 [/list]
 
 [h2]Notes[/h2]
-Draw slowly and close the ring. Hover over a seal to see what it does.
-Unofficial fan mod. Bug reports are welcome: please say which seal you drew.
+The code was written with the help of AI; design and testing are mine.
+Unofficial fan mod. Bug reports are welcome.
 [url=https://github.com/Andrinha/witch-sealbook]Source code[/url]"
 	tags="gameplay,spells,items,alchemy"
 	dont_upload_folders="docs|tests|tools|.idea|.git"

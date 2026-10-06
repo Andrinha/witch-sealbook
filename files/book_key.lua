@@ -1,4 +1,5 @@
 -- The configurable key used to open or close a book. Values are Noita keycodes (data/scripts/debug/keycodes.lua).
+-- settings.lua keeps its own copy of KEY_NAMES (it can't load this file); change both together.
 BOOK_OPEN_KEY_SETTING = "witch_notebook.open_key"
 local DEFAULT_OPEN_KEY = 5 -- B
 local KEY_NAMES = {}
@@ -24,6 +25,11 @@ function book_open_key()
 	return code and KEY_NAMES[code] and code or DEFAULT_OPEN_KEY
 end
 
+-- RMB with a book in hand opens it (on unless the setting is switched off)
+function book_open_rmb()
+	return ModSettingGet( "witch_notebook.open_rmb" ) ~= false
+end
+
 function book_open_key_name( code )
 	return KEY_NAMES[code or book_open_key()] or KEY_NAMES[DEFAULT_OPEN_KEY]
 end
@@ -32,6 +38,7 @@ function book_open_key_hint()
 	return "[" .. book_open_key_name() .. "]"
 end
 
-function book_open_key_options()
-	return KEY_NAMES
+-- "RMB in hand or [B]", or just "[B]" with RMB switched off
+function book_open_hint()
+	return ( book_open_rmb() and "RMB in hand or " or "" ) .. book_open_key_hint()
 end
