@@ -6,6 +6,7 @@
 dofile_once( "data/scripts/lib/utilities.lua" )
 dofile_once( "mods/witch_notebook/files/dictionary.lua" )
 dofile_once( "mods/witch_notebook/files/fx.lua" )
+dofile_once( "mods/witch_notebook/files/resonances.lua" ) -- how much the resonances' lasting magic does
 
 EFFECTS = "mods/witch_notebook/files/effects/"
 SOLID = "mods/witch_notebook/files/entities/solid/"
@@ -326,6 +327,10 @@ function ground_below( x, y, depth )
 	local hit, hx, hy = RaytracePlatforms( x, y, x, y + ( depth or 200 ) )
 	if hit then return hx, hy end
 end
+
+-- the solid piece an element sets into (Solidification, the Rampart): its kind, stone by default
+SOLID_PIECES = { water = "ice_block", ice = "ice_block", storm = "ice_block", frost = "ice_block", crystal = "crystal_block",
+	sand = "sand_block", sandstorm = "sand_block", mud = "sand_block", light = "light_plank", beam = "light_plank" }
 
 -- A solid piece (entities/solid/<kind>.xml: a static body one can stand on) at x, y; it crumbles after 'frames'
 function solid_piece( kind, x, y, frames )

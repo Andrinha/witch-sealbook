@@ -273,12 +273,17 @@ function compile_spell( seal )
 	-- levitation alone (the Pyreball Seal): the sphere hangs over the seal instead of flying away
 	spell.floats = spell.form == "levitation" and ( behaviors.thrust or 0 ) < 0.5 * ( ( behaviors.float or 0 ) + ( behaviors.contain or 0 ) ) or nil
 
+	-- a resonance: the element, the form and the signs together make something of their own (resonances.lua); the signs
+	-- it is made of stay in the spell even where alone they would do nothing
+	local resonance = not spell.manifest and not spell.shape and resonance_find( element, spell.form, spell.floats, behaviors ) or nil
 	-- only what works on the spell's carrier (a field doesn't fly, so it can't pierce or spin), or what its own way of
 	-- manifesting takes from the signs
 	local effect = dictionary_effect( element, spell.form, spell.floats )
 	local carrier = effect and effect.carrier or "field"
 	for key in pairs( behaviors ) do
-		if not sign_works( key, element, carrier, spell.manifest or spell.shape ) then behaviors[key] = nil end
+		if not sign_works( key, element, carrier, spell.manifest or spell.shape ) and not ( resonance and resonance.uses[key] ) then
+			behaviors[key] = nil
+		end
 	end
 	if behaviors.spin then spell.range = spell.range - 0.3 * math.abs( behaviors.spin ) end
 
@@ -341,6 +346,10 @@ function compile_spell( seal )
 		if entry and entry.manifest then spell.manifest = entry.manifest end
 		if entry and entry.forbidden then spell.forbidden = true end
 		spell.extras = entry and extra_behaviors( seal, entry )
+	elseif resonance then
+		-- a wiki's seal is its page: only a seal of the witch's own resonates
+		spell.resonance = resonance.key
+		if resonance.forbidden then spell.forbidden = true end
 	end
 	if not named and count > 0 then
 		local sigil_quality, sigil_count = 0, 0
@@ -398,9 +407,13 @@ function spell_summary( spell, carrier )
 	elseif spell.element ~= "shockwave" then
 		parts[#parts + 1] = spell.floats and "floats in place" or DICTIONARY_FORMS[spell.form]
 	end
+	-- a resonance by its name; the signs it takes for itself, or that only it reads, aren't told apart
+	local resonance = spell.resonance and RESONANCE_BY_KEY[spell.resonance]
+	if resonance then parts[#parts + 1] = resonance_title( resonance, spell.element ) .. " (" .. resonance.text .. ")" end
 	for _, b in ipairs( DICTIONARY_BEHAVIORS ) do
 		local text = b["text_" .. carrier] or b.text
 		local w = spell.behaviors[b.key]
+		if resonance and w and ( resonance.consumed[b.key] or not dictionary_behavior_works( b.key, carrier ) ) then w = nil end
 		if text and w then
 			parts[#parts + 1] = text .. ( b.key == "pierce" and w > 1 and " x" .. w or "" )
 		end
@@ -536,7 +549,8 @@ function read_spell( strokes )
 end
 
 local SPELL_FIELDS = { "element", "form", "force", "focus", "spread", "range", "lifetime", "heavy", "tilt", "push_x", "push_y",
-	"stability", "precision", "floats", "directed", "shape", "manifest", "named", "frame", "layers", "glaives", "forbidden", "span" }
+	"stability", "precision", "floats", "directed", "shape", "manifest", "named", "frame", "layers", "glaives", "forbidden", "span",
+	"resonance" }
 
 -- Stored on the spellbook's page and read back when it is cast (cast.lua): "element=fire;...;b=pull:1.2,spin:-0.8".
 -- Seals inside the seal and linked seals follow, each after "&".

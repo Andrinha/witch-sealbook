@@ -148,7 +148,8 @@ class Reading(unittest.TestCase):
 
     def test_left_out(self):
         cases = [
-            (["fire"], [("column", False)] * 2 + [("reflection", False)] * 2, "reflect"),     # a shot doesn't reflect
+            (["fire"], [("column", False)] * 2 + [("partition", False)] * 2, "bound"),        # a shot has no edge to keep
+            # (Reflection on a shot is no longer left out: it is the Ricochet resonance, tests/test_resonances.py)
             (["whorl"], [("pull", False)] * 2, "pull"),                                      # the whirlwind takes none of it
             (["dragon"], [("crosshair", False)] * 2, "homing"),
             (["light"], [("column", False)] * 2 + [("collection", True)] * 2, "scatter"),   # light has no matter to scatter

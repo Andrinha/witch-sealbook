@@ -234,12 +234,14 @@ local function full_grimoire()
 	return ModSettingGet( FULL_GRIMOIRE_SETTING ) == true
 end
 
--- the grimoire's pages in the open book: all of them, or the learned ones - those its pages hold
+-- the grimoire's pages in the open book: all of them, or the learned ones - those its pages hold; then the Discoveries,
+-- the resonances the witch has found (resonances.lua), a page each as the Test Book draws them
 local wiki_list_cache, wiki_list_key
 local function wiki_list()
 	if cur.def.test then return TestBook.pages() end
 	local learned = full_grimoire() and "*" or GlobalsGetValue( LEARNED_VAR, "" ) .. "|" .. book_learned_before()
-	local key = cur.key .. "|" .. learned
+	local found = full_grimoire() and "*" or ( ModSettingGet( RESONANCE_FOUND_SETTING ) or "" )
+	local key = cur.key .. "|" .. learned .. "|" .. found
 	if wiki_list_key ~= key then
 		wiki_list_key = key
 		wiki_list_cache = {}
@@ -247,6 +249,11 @@ local function wiki_list()
 			if ( learned == "*" or is_learned( entry.key ) ) and book_holds( cur.key, seal_book( entry ) ) then
 				wiki_list_cache[#wiki_list_cache + 1] = entry
 			end
+		end
+		local have = resonance_found()
+		for _, r in ipairs( RESONANCES ) do
+			local entry = ( found == "*" or have[r.key] ) and TestBook.resonance_entry( r.key )
+			if entry then wiki_list_cache[#wiki_list_cache + 1] = entry end
 		end
 	end
 	return wiki_list_cache
@@ -268,6 +275,7 @@ end
 -- the page 'key' of the book 'st's other part: the grimoire's, or the Test Book's own
 local function wiki_lookup( st, key )
 	if st.def.test then return TestBook.page( key ) end
+	if key:sub( 1, 4 ) == "res:" then return TestBook.resonance_entry( key:sub( 5 ) ) end
 	return GRIMOIRE_BY_KEY and GRIMOIRE_BY_KEY[key]
 end
 
@@ -749,6 +757,11 @@ local function finish_sigil()
 			cur.seals[i].parts_of, cur.seals[i].parts_data = cur.seals[i].strokes, cur.seals[i].spell:match( "^[^&]*" ) or ""
 		end
 		awakening = { page = cur.def.intro + i, state = state }
+		-- a resonance drawn for the first time (resonances.lua): the witch has found something new
+		local resonance = spell.resonance and not spell.named and RESONANCE_BY_KEY[spell.resonance]
+		if resonance and resonance_discover( resonance.key ) then
+			GamePrintImportant( "A resonance: " .. resonance_title( resonance, spell.element ), ( resonance.text:gsub( "^%l", string.upper ) ) )
+		end
 		if cur.edit == cur.blank or cur.edit == cur.blank_next then clear_page() end
 		select_edit_page( blank_page() )
 		save_page()
@@ -927,11 +940,13 @@ end
 
 local function paragraph( x, y, width, str, color ) return D.wrapped( D.SCREEN, x, y, width, str, color ) end
 
--- A page of the Test Book: the seal a little smaller, what it is over it, the sign tried under it
+-- A page of the Test Book or of the grimoire's Discoveries: the seal a little smaller, what it is over it, the sign tried
+-- (what it is drawn of) under it; the quire's small leaves: the seal only
 local TEST_SEAL_SCALE = 0.86
 local function draw_test_content( s, entry )
 	local color = paper_color( wiki_color( entry ) )
 	draw_strokes( s, wiki_page_strokes( entry ), color, nil, nil, true, TEST_SEAL_SCALE )
+	if cur.def.round then return end
 	local look = cur.look
 	centered_on( s, look.name_y, entry.title, color, entry.key == cur.active_wiki and 2 * look.ribbon.x - 2 or 12 )
 	centered_on( s, view.size - 24, entry.sign, NOTE_COLOR )
@@ -1225,7 +1240,7 @@ local function draw_page( face, pos, mx, my, still )
 			end
 		end
 		if over and entry.key ~= cur.active_wiki then
-			D.text( label_x, label.y, ( full_grimoire() or cur.def.test ) and "LMB - choose" or "learned", NOTE_COLOR )
+			D.text( label_x, label.y, ( full_grimoire() or cur.def.test ) and "LMB - choose" or entry.resonance and "found" or "learned", NOTE_COLOR )
 		end
 		return
 	end
@@ -1436,11 +1451,21 @@ end
 -- Under the book in the grimoire: its sections to jump to, and what the seal under the mouse does. Returns the y below.
 local function draw_wiki_footer( x, y, width )
 	if not full_grimoire() then
-		y = paragraph( x, y, width, "Seals learned: " .. #wiki_list() .. " of " .. #( GRIMOIRE or {} )
+		local learned = 0
+		for _, entry in ipairs( wiki_list() ) do if not entry.resonance then learned = learned + 1 end end
+		y = paragraph( x, y, width, "Seals learned: " .. learned .. " of " .. #( GRIMOIRE or {} )
 			.. " - sheets lie around the world and are sold in the Holy Mountains", NOTE_COLOR )
 	end
 	local great = wiki_too_great()
 	if great > 0 then y = paragraph( x, y, width, great .. " more too great for the " .. cur.def.name .. "'s pages", NOTE_COLOR ) end
+	-- the resonances found, and a clue to one not found yet (another as more are found)
+	if not full_grimoire() then
+		local have, unfound = resonance_found(), {}
+		for _, r in ipairs( RESONANCES ) do if not have[r.key] then unfound[#unfound + 1] = r end end
+		local text = "Resonances found: " .. ( #RESONANCES - #unfound ) .. " of " .. #RESONANCES
+		if #unfound > 0 then text = text .. " - a clue: " .. unfound[( #RESONANCES - #unfound ) % #unfound + 1].hint end
+		y = paragraph( x, y, width, text, NOTE_COLOR )
+	end
 	local tabs = wiki_sections()
 	local page = spread_faces( cur.spread )
 	if cur.def.round then page = cur.spread end
@@ -1541,7 +1566,7 @@ end
 -- Beside each page: what its seal does (test_book.lua TestBook.notes): what appears and its numbers, each sign and what
 -- shows it, what the sign changed, what the seal is drawn of
 local NOTE_LOOK = { head = { GOLD_COLOR, 0 }, body = { LIGHT_TEXT, 0 }, sign = { { 0.75, 0.88, 1 }, 4 }, test = { GREY, 0 },
-	diff = { { 0.98, 0.78, 0.5 }, 4 }, drawn = { GREY, 4 }, ink = { { 0.85, 0.75, 1 }, 4 } }
+	diff = { { 0.98, 0.78, 0.5 }, 4 }, drawn = { GREY, 4 }, ink = { { 0.85, 0.75, 1 }, 4 }, resonance = { { 1, 0.62, 0.92 }, 2 } }
 local NOTES_WIDTH = 210 -- at most
 
 -- how many lines D.wrapped makes of 'str' in 'width'
@@ -2024,7 +2049,8 @@ function notebook_update()
 					if full_grimoire() or cur.def.test then
 						set_active_wiki( cur, entry.key )
 					else
-						note = { text = "A learned seal: redraw it on a blank page - the book will recognize it and cast it.", frames = NOTE_FRAMES }
+						note = { text = entry.resonance and "A resonance you found: draw it again on a blank page to cast it."
+							or "A learned seal: redraw it on a blank page - the book will recognize it and cast it.", frames = NOTE_FRAMES }
 					end
 				elseif not wiki and cur.seals[face - cur.def.intro] and cur.seals[face - cur.def.intro].draft ~= "1" then
 					set_active( cur, face - cur.def.intro )

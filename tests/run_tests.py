@@ -471,6 +471,7 @@ def test_all_combinations(lua):
     compile_, serialize = lua.eval("compile_spell"), lua.eval("serialize_spell")
     effect, works = lua.eval("dictionary_effect"), lua.eval("dictionary_behavior_works")
     opposites = [(b["key"], b["opposite"]) for b in lua.eval("DICTIONARY_BEHAVIORS").values() if b["opposite"]]
+    resonances = lua.eval("RESONANCE_BY_KEY")
     recipes, failed, spells = 0, [], {}
     for sigils, signs in plans:
         recipes += 1
@@ -482,7 +483,9 @@ def test_all_combinations(lua):
         have = set(spell["behaviors"].keys())
         carrier = effect(spell["element"], spell["form"], spell["floats"])["carrier"]
         special = spell["manifest"] or spell["shape"]  # a way of manifesting of its own takes what the signs give
-        if any(a in have and b in have for a, b in opposites) or not (special or all(works(k, carrier) for k in have)) or not spell["summary"]:
+        # a resonance keeps the signs it is made of, even those that alone do nothing on the carrier (files/resonances.lua)
+        uses = set(resonances[spell["resonance"]]["uses"].keys()) if spell["resonance"] else set()
+        if any(a in have and b in have for a, b in opposites) or not (special or all(works(k, carrier) or k in uses for k in have)) or not spell["summary"]:
             failed.append(f"{sigils} {signs}: {sorted(have)} on {carrier}")
         key = (spell["element"], spell["form"], spell["manifest"], spell["shape"], tuple(sorted(have)))
         spells.setdefault(key, serialize(spell))

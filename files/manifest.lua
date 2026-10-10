@@ -353,9 +353,16 @@ M.carousel = function( ctx )
 	EntityAddTag( e, "witch_light_carousel" )
 	return { e }
 end
+-- the resonance a seal of the witch's own holds (resonances.lua), if it is this one
+local function resonates( ctx, key ) return ctx.spell.resonance == key and not ctx.spell.named end
+
+-- the ring of lights; Halo: they turn enemy shots back; Blade Dance: they are blades; Guardian Lights: they fly at
+-- enemies that come near
 M.orbit_ring = function( ctx, x, y )
 	return { spawn( "orbit", "ring", x or ctx.x, y or ctx.y, mine( ctx, { frames = secs( ctx, 10 ), element = el( ctx, "light" ),
-		count = 10 + 2 * math.min( 4, math.floor( mod( ctx, "pierce" ) ) ), radius = 24 * grown( ctx ) } ) ) }
+		count = 10 + 2 * math.min( 4, math.floor( mod( ctx, "pierce" ) ) ), radius = 24 * grown( ctx ),
+		reflect = resonates( ctx, "halo" ) and 1 or nil, blades = resonates( ctx, "blades" ) and 1 or nil,
+		guard = resonates( ctx, "guardian" ) and 1 or nil } ) ) }
 end
 M.amplify = function( ctx )
 	GlobalsSetValue( AMPLIFY_VAR or "witch_notebook.amplify", "3" )
@@ -366,16 +373,48 @@ end
 -- The Sign of Dispersion: a wave of the element out from the seal (with pulling signs it rushes in, with pushing ones
 -- and gusts it throws harder). Binding and Entwining hold whom it strikes, Cooling freezes them, Reflection turns
 -- projectiles back; cast.lua gives it what it does to the ground (wave_converts).
+-- The wave's resonances: Collapse rushes in and bursts out again wider, Quake shakes the ground round it, Tide sends
+-- rolling waves of its water out either way (the gust that drives them throws no harder itself), Chain Storm leaps as
+-- lightning to the enemies round the caster, Rampart sets a ring of blocks of its element where it stops.
+local TIDE_MATTER = { ice = "water", frost = "water", steam = "water", steamblast = "water" }
 M.nova = function( ctx, x, y )
 	local b = ctx.spell.behaviors or {}
 	local element = el( ctx, "light" )
-	local throw = ( b.push or 0 ) + ( b.gust or 0 )
-	return { spawn( "nova", "nova", x or ctx.x, y or ctx.y, mine( ctx, { element = element, r = size( ctx, 55 ),
+	local tide = resonates( ctx, "tide" )
+	local throw = ( b.push or 0 ) + ( tide and 0 or ( b.gust or 0 ) )
+	local r = size( ctx, 55 )
+	x, y = x or ctx.x, y or ctx.y
+	local made = { spawn( "nova", "nova", x, y, mine( ctx, { element = element, r = r,
 		force = ctx.spell.force or 0, inward = ( b.pull or 0 ) > 0 and 1 or 0, grow = 22,
 		push = throw > 0 and ( 80 + ( ( DICTIONARY_LOOKS[element] or {} ).knockback or 0 ) ) * ( 1 + 0.6 * math.min( 2, throw ) ) or nil,
 		hold = b.hold and math.floor( SIGN_AMOUNTS.hold( b.hold ).frames ) or nil,
 		bind = b.bind and math.floor( SIGN_AMOUNTS.bind( b.bind ).frames ) or nil,
-		chill = b.cool and 1 or nil, reflect = b.reflect and 1 or nil } ) ) }
+		chill = b.cool and 1 or nil, reflect = b.reflect and 1 or nil,
+		rebound = resonates( ctx, "collapse" ) and RESONANCE_AMOUNTS.collapse( b.grow or 1 ).wider or nil } ) ) }
+	if resonates( ctx, "quake" ) then
+		made[#made + 1] = spawn( "resonance", "quake", x, y, mine( ctx, { r = r * 1.5,
+			frames = RESONANCE_AMOUNTS.quake( b.crush or 1 ).frames } ) )
+	elseif resonates( ctx, "chain_storm" ) then
+		local a = RESONANCE_AMOUNTS.chain_storm( b.link or 1 )
+		made[#made + 1] = spawn( "resonance", "arcs", x, y, mine( ctx, { element = element, frames = 12 * a.pulses, reach = a.reach } ) )
+	elseif resonates( ctx, "rampart" ) then
+		local a = RESONANCE_AMOUNTS.rampart( b.grow )
+		local piece = SOLID_PIECES[element] or "stone_block"
+		for i = 0, a.pieces - 1 do
+			local angle = i / a.pieces * 2 * math.pi
+			local px, py = x + math.cos( angle ) * a.r, y + math.sin( angle ) * a.r
+			-- where the wave can reach: not inside the rock round it
+			if not RaytraceSurfaces( x, y, px, py ) then made[#made + 1] = solid_piece( piece, px, py, a.frames ) end
+		end
+	elseif tide then
+		local material = TIDE_MATTER[element] or ( DICTIONARY_LOOKS[element] or {} ).material or "water"
+		local _, gy = ground_below( ctx.x, ctx.y - 4, 40 )
+		for dir = -1, 1, 2 do
+			made[#made + 1] = spawn( "mover", "wave", ctx.x + dir * 6, ( gy or ctx.y + 4 ) - 1, mine( ctx, { frames = 90, dx = dir,
+				element = element, material = material, big = size( ctx, 1 ) } ) )
+		end
+	end
+	return made
 end
 -- An empty ring vents its energy where it was drawn. It pushes nearby creatures,
 -- but has no element to burn them or break the terrain.

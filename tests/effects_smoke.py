@@ -9,7 +9,7 @@ unknown materials and unknown component fields - what would otherwise only show 
 """
 import sys
 
-from harness import FIELDS, MATERIALS, WORLD_FILES, bare_world
+from harness import FIELDS, MATERIALS, WORLD_FILES, bare_world, load_reader
 import noita_components as NC  # tools/, on the path with harness
 
 FRAMES = 240
@@ -117,6 +117,17 @@ def main():
             b = ",".join(f"{k}:1" for k in behaviors if k != "pierce") + ",pierce:2"
             run(f"form {element} {form}", f'return cast_spell( PLAYER, parse_spell_data( "element={element};form={form};force=0.5;b={b}" ), '
                 '0, GROUND - 8, 0.99, -0.13, 150, -20, W.frame, nil )', frames=120)
+    # every resonance (resonances.lua) in each form, with a few of the elements it takes, as the Test Book has them
+    reader = load_reader()
+    reader.execute('dofile_once( "mods/witch_notebook/files/sigils.lua" ) dofile_once( "mods/witch_notebook/files/test_book.lua" )')
+    by_part = {}
+    for p in reader.eval("TestBook.pages()").values():
+        if p["key"].startswith("test:res/"):
+            by_part.setdefault(p["title"], []).append(p)
+    for title, pages in sorted(by_part.items()):
+        for p in pages[:: max(1, len(pages) // 3)]:
+            run(f"resonance {p['name']}", f'return cast_spell( PLAYER, parse_spell_data( "{p["spell"]}" ), 0, GROUND - 8, 0.99, -0.13, '
+                '60, -20, W.frame, nil )', frames=120)
     # the book in hand: a click casts the active page; the Repetition Seal repeats it
     run("spellbook_use", 'GlobalsSetValue( "witch_notebook.active_spell", "element=fire;form=column;b=thrust:1" ) '
         'local book = EntityCreateNew( "book" ) EntityAddComponent2( book, "VariableStorageComponent", { name = "witch_notebook_next_cast", value_int = 0 } ) '

@@ -27,6 +27,14 @@ MODES.nova = function( e, p, age, x, y )
 		if p.element == "smoke" or p.element == "smog" then
 			effect_spawn( "zone", "mist", x, y, { frames = 300, r = R * 0.8, owner = p.owner or 0 } )
 		end
+		-- Collapse (resonances.lua): drawn in to the middle, the wave bursts out again, wider and harder
+		if inward and ( p.rebound or 0 ) > 1 then
+			local k = p.rebound
+			fx_flash( x, y, p.element, R * 2 * k, 16 )
+			effect_spawn( "nova", "nova", x, y, { owner = p.owner or 0, element = p.element, r = R * k, grow = grow,
+				force = p.force or 0, power = p.power or 1, damage = ( p.damage or ( 0.3 + 0.25 * ( p.force or 0 ) ) ) * k,
+				push = ( p.push or 80 ) * 1.5, chill = p.chill, hold = p.hold, bind = p.bind, reflect = p.reflect } )
+		end
 		EntityKill( e )
 		return
 	end

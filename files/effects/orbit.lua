@@ -39,20 +39,65 @@ MODES.carousel = function( e, p, age )
 	if owner and age == 0 then EntityAddComponent2( e, "LightComponent", { radius = 90, r = 255, g = 230, b = 170, fade_out_time = 1 } ) end
 end
 
--- a ring of the element round the caster: it strikes what it touches; water puts out fire on the caster
+-- a ring of the element round the caster: it strikes what it touches; water puts out fire on the caster. Its resonances
+-- (resonances.lua): 'reflect' (Halo) - enemy shots that reach the ring turn back; 'blades' (Blade Dance) - the lights are
+-- blades that cut; 'guard' (Guardian Lights) - when an enemy comes near, a light leaves the ring and flies at it as a shot
 MODES.ring = function( e, p, age )
 	local look = DICTIONARY_LOOKS[p.element] or {}
+	local blades = p.blades == 1
 	local owner = circle( e, p, age, p.count or 10, function( i, age ) return p.radius or 24 end,
 		function( px, py, a, i )
-			fx_dot( px, py, effect_color( p.element, 0.3 ), 0, 0, 0.06 )
+			if blades then
+				-- a blade along the ring, its middle bright
+				for k = -1, 1 do
+					fx_dot( px - math.sin( a ) * k * 2, py + math.cos( a ) * k * 2 * ( p.flat or 0.8 ),
+						effect_color( p.element, k == 0 and 0.95 or 0.5 ), 0, 0, 0.05 )
+				end
+			else
+				fx_dot( px, py, effect_color( p.element, 0.3 ), 0, 0, 0.06 )
+			end
 			if i % 2 == 0 then fx_dot( px, py, effect_color( p.element, 0.8, 0.8 ), -math.sin( a ) * 15, math.cos( a ) * 15, 0.2 ) end
 			if look.material and Random( 1, 40 ) == 1 then GameCreateCosmeticParticle( look.material, px, py, 1, 0, 0, 0, 0.3, 0.5, true, false, false, false, 0, 0 ) end
 		end,
 		function( id, px, py )
+			if blades then
+				seal_damage( id, 0.15 * ( p.power or 1 ), "DAMAGE_SLICE", p.owner, px, py )
+				push_from( id, px, py, 60 )
+				return
+			end
 			seal_damage( id, 0.1 * ( p.power or 1 ), "DAMAGE_PROJECTILE", p.owner, px, py )
 			if look.status and look.status ~= "" then give_effect( id, look.status ) end
 			push_from( id, px, py, 60 )
 		end )
+	if owner and p.guard == 1 and age >= 20 and age % RESONANCE_AMOUNTS.guardian().every == 0 and ( p.count or 0 ) > 0 then
+		local x, y = EntityGetTransform( e )
+		local reach = RESONANCE_AMOUNTS.guardian().reach
+		local best_d, bx, by
+		for _, id in ipairs( creatures_in( x, y, reach, owner ) ) do
+			local ex, ey = EntityGetTransform( id )
+			ey = ey + creature_body( id )
+			local d = ( ex - x ) ^ 2 + ( ey - y ) ^ 2
+			if ( not best_d or d < best_d ) and not RaytraceSurfaces( x, y, ex, ey ) then best_d, bx, by = d, ex, ey end
+		end
+		if best_d then
+			local look = DICTIONARY_LOOKS[p.element] and p.element or "light"
+			local r = p.radius or 24
+			local sx, sy = x + ( bx - x ) / math.sqrt( best_d ) * r, y + ( by - y ) / math.sqrt( best_d ) * r
+			local shot = EntityLoad( carrier_file( look, "bolt" ), sx, sy )
+			GameShootProjectile( owner, sx, sy, bx, by, shot, true )
+			p.count = p.count - 1
+			effect_set( e, "count", p.count )
+			if p.count <= 0 then
+				EntityKill( e )
+				return
+			end
+		end
+	end
+	if owner and p.reflect == 1 then
+		local x, y = EntityGetTransform( e )
+		local r = ( p.radius or 24 ) * math.min( 1, age / 20 )
+		reflect_projectiles( x, y, math.max( 0, r - 8 ), r + 8, owner )
+	end
 	if owner and age % 30 == 0 and ( p.element == "water" or p.element == "storm" or p.element == "ice" ) then
 		clear_effects( owner, { "ON_FIRE" } )
 	end

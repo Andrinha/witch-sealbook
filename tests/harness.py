@@ -24,15 +24,15 @@ import noita_components as NC  # noqa: E402
 
 # what reads a drawing and makes its spell
 SEAL_FILES = ["files/seal.lua", "files/seal_canon.lua", "files/seal_spell.lua"]
-READER_FILES = ["files/templates.lua", "files/dictionary.lua", "files/recognizer.lua"] + SEAL_FILES
+READER_FILES = ["files/templates.lua", "files/dictionary.lua", "files/resonances.lua", "files/recognizer.lua"] + SEAL_FILES
 GRIMOIRE_FILE = "files/grimoire.lua"
 # the books, in init.lua's order
-MOD_FILES = ["files/templates.lua", "files/dictionary.lua", "files/sigils.lua", "files/recognizer.lua"] + SEAL_FILES + [
+MOD_FILES = ["files/templates.lua", "files/dictionary.lua", "files/resonances.lua", "files/sigils.lua", "files/recognizer.lua"] + SEAL_FILES + [
              "files/books.lua", "files/cast.lua", "files/ink.lua", "files/sheets.lua", "files/book_gfx.lua", "files/book_draw.lua", "files/page_turn.lua",
              "files/awaken.lua", "files/strokes.lua", "files/book_store.lua", "files/book_mouse.lua", "files/book_pages.lua",
              "files/quire_strap.lua", "files/quire_strap_world.lua", "files/spell_notes.lua", "files/test_book.lua", "files/notebook.lua"]
 # the world's magic: what casts a page
-WORLD_FILES = ["files/templates.lua", "files/dictionary.lua", "files/sigils.lua", "files/recognizer.lua",
+WORLD_FILES = ["files/templates.lua", "files/dictionary.lua", "files/resonances.lua", "files/sigils.lua", "files/recognizer.lua",
                GRIMOIRE_FILE] + SEAL_FILES + ["files/cast.lua"]
 
 
@@ -280,7 +280,7 @@ def load_mod():
 def load_cast():
     lua = bare_runtime()
     lua.execute(CAST_STUBS)
-    for f in ["files/dictionary.lua", "files/cast.lua"]:
+    for f in ["files/dictionary.lua", "files/resonances.lua", "files/cast.lua"]:
         lua.execute(read_mod_file(f))
     return lua
 

@@ -1,6 +1,7 @@
 dofile_once( "data/scripts/lib/utilities.lua" )
 dofile_once( "mods/witch_notebook/files/templates.lua" )
 dofile_once( "mods/witch_notebook/files/dictionary.lua" )
+dofile_once( "mods/witch_notebook/files/resonances.lua" )
 dofile_once( "mods/witch_notebook/files/sigils.lua" )
 dofile_once( "mods/witch_notebook/files/recognizer.lua" )
 dofile_once( "mods/witch_notebook/files/grimoire.lua" )

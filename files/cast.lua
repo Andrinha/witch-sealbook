@@ -10,6 +10,9 @@
 -- INKS, ink_apply). Runs in the book's own Lua context (spellbook.lua).
 
 dofile_once( "mods/witch_notebook/files/dictionary.lua" )
+dofile_once( "mods/witch_notebook/files/resonances.lua" )
+dofile_once( "mods/witch_notebook/files/resonance_cast.lua" )
+dofile_once( "mods/witch_notebook/files/element_traits.lua" )
 dofile_once( "mods/witch_notebook/files/books.lua" )
 dofile_once( "mods/witch_notebook/files/fx.lua" )
 dofile_once( "mods/witch_notebook/files/ink.lua" )
@@ -118,6 +121,9 @@ function seal_recharge( spell )
 			frames = frames + RECHARGE_COPY * math.max( 0, math.floor( ( spell.behaviors or {} ).pierce or 0 ) - 1 )
 		end
 	end
+	-- a resonance does more than its carrier (resonances.lua)
+	local resonance = spell.resonance and RESONANCE_BY_KEY[spell.resonance]
+	if resonance and not spell.named then frames = frames + ( resonance.recharge or 0 ) end
 	for _, list in ipairs( { spell.subs or {}, spell.links or {} } ) do
 		for _, sub in ipairs( list ) do frames = frames + 0.5 * seal_recharge( sub ) end
 	end
@@ -223,12 +229,19 @@ local CRUSHED = { from = "rock_static,rock_static_intro,rock_static_noedge,rock_
 local REFORMED = { from = "sand,soil,snow,snow_sticky", to = "sand_static,sand_static,snow_static,snow_static" }
 local SOFTENED = { from = "rock_static,rock_static_noedge,sandstone,snowrock_static,ice_static,glass_static",
 	to = "soil,soil,sand,snow,snow,glass_broken" }
+-- Magma (resonances.lua): a hot element's Crushing melts rock into lava and sand into molten glass
+local MOLTEN = { from = "rock_static,rock_static_intro,rock_static_noedge,rock_static_glow,sand_static,sandstone,snowrock_static,snow_static"
+		.. ",soil,soil_lush,soil_dead,soil_dark,soil_lush_dark,fungisoil,sand",
+	to = "lava,lava,lava,lava,glass_molten,glass_molten,water,water,lava,lava,lava,lava,lava,lava,glass_molten" }
 local PURIFIED = { from = FOULS.from .. ",blood", to = FOULS.to .. ",water" } -- what is foul (effects/lib.lua), and blood
 local FROZEN = { from = "water,water_salt,water_swamp,blood,slime,fire,lava",
 	to = "ice_static,ice_static,ice_static,ice_blood_static,ice_slime_static,air,rock_static" }
 local REFUSE = { from = "blood,pus,slime,poo,vomit,rotten_meat", to = "air,air,air,air,air,air" }
 -- what each sign turns into what (spell_notes.lua names them; the wave does them too: wave_converts)
-SIGN_CONVERTS = { crush = CRUSHED, build = REFORMED, soften = SOFTENED, purify = PURIFIED, cool = FROZEN, refuse = REFUSE }
+SIGN_CONVERTS = { crush = CRUSHED, build = REFORMED, soften = SOFTENED, purify = PURIFIED, cool = FROZEN, refuse = REFUSE,
+	melt = MOLTEN }
+-- what the Sign of Crushing does in this spell: Magma melts, the rest grinds
+local function crushes( spell ) return spell and spell.resonance == "magma" and MOLTEN or CRUSHED end
 local BEHAVIORS = {
 	pierce = function( projectile )
 		local proj = EntityGetFirstComponentIncludingDisabled( projectile, "ProjectileComponent" )
@@ -283,14 +296,15 @@ local BEHAVIORS = {
 		add_var( projectile, PULL_VAR, -a.push )
 		add_script( projectile, "pull.lua" )
 	end,
-	-- Wall Breaker: bores through rock and earth, crushing them into sand
-	crush = function( projectile, w )
+	-- Wall Breaker: bores through rock and earth, crushing them into sand (Magma: melting them)
+	crush = function( projectile, w, spell )
 		local proj = EntityGetFirstComponentIncludingDisabled( projectile, "ProjectileComponent" )
 		if proj then
 			ComponentSetValue2( proj, "penetrate_world", true )
 			ComponentSetValue2( proj, "penetrate_world_velocity_coeff", 0.5 )
 		end
-		convert( projectile, CRUSHED.from, CRUSHED.to, A.crush( w ).r )
+		local set = crushes( spell )
+		convert( projectile, set.from, set.to, set == MOLTEN and RESONANCE_AMOUNTS.magma( w ).r or A.crush( w ).r )
 	end,
 	-- Integration: loose sand and snow around it set solid (with earth's own sand: a path of stone)
 	build = function( projectile, w )
@@ -577,11 +591,17 @@ function spell_tuning( spell, power )
 		field_lifetime = math.floor( 60 * spell.lifetime ) }
 end
 
--- The projectile an effect spawns, tuned by the spell
+-- The projectile an effect spawns, tuned by the spell; a resonance (resonance_cast.lua) prepares it before it is shot,
+-- takes the signs it consumes for itself and gives it its twist after the signs' own behaviors
+local KIT
 local function spawn( ctx, file, x, y, dir_x, dir_y, spell, effect )
 	local projectile = EntityLoad( file, x, y )
-	GameShootProjectile( ctx.shooter, x, y, x + dir_x * 100, y + dir_y * 100, projectile, true )
 	local b = spell.behaviors or {}
+	local carrier = effect.carrier or "bolt"
+	local resonance = spell.resonance and RESONANCE_BY_KEY[spell.resonance]
+	local twist = resonance and RESONANCE_CAST[resonance.key]
+	if twist and twist.prepare then twist.prepare( KIT, projectile, b, spell, carrier, ctx ) end
+	GameShootProjectile( ctx.shooter, x, y, x + dir_x * 100, y + dir_y * 100, projectile, true )
 	local tuned = spell_tuning( spell, ctx.power )
 	local float = tuned.float
 
@@ -629,11 +649,24 @@ local function spawn( ctx, file, x, y, dir_x, dir_y, spell, effect )
 		end
 	end
 
-	local carrier = effect.carrier or "bolt"
 	for _, behavior in ipairs( DICTIONARY_BEHAVIORS ) do
 		local w, apply = b[behavior.key], BEHAVIORS[behavior.key]
-		if w and apply and dictionary_behavior_works( behavior.key, carrier ) then apply( projectile, w, spell, carrier, ctx ) end
+		if w and apply and dictionary_behavior_works( behavior.key, carrier ) and not ( resonance and resonance.consumed[behavior.key] ) then
+			apply( projectile, w, spell, carrier, ctx )
+		end
 	end
+	-- the element's nature on the mod's own shots, orbs and drops (element_traits.lua): before the resonance's twist
+	if TRAIT_CARRIERS[carrier] and file:find( "/carriers/", 1, true ) then element_traits_apply( projectile, spell.element, effect.splash ) end
+	if twist and twist.twist then twist.twist( KIT, projectile, b, spell, carrier, ctx ) end
+	ink_look( projectile, ctx )
+	return projectile
+end
+
+-- A projectile as it is (the game's fields and clouds a resonance makes), shot from x, y towards tx, ty; the inks still
+-- show on it
+local function spawn_raw( ctx, file, x, y, tx, ty )
+	local projectile = EntityLoad( file, x, y )
+	GameShootProjectile( ctx.shooter, x, y, tx, ty, projectile, true )
 	ink_look( projectile, ctx )
 	return projectile
 end
@@ -665,7 +698,7 @@ end
 
 -- What the wave's signs do to the ground and liquids it runs over: the game's conversion spreading out with it
 local WAVE_GROUND = { crush = true, build = true, soften = true } -- rock and sand: a smaller circle than the liquids'
-function wave_converts( wave, b )
+function wave_converts( wave, b, spell )
 	if not wave then return end
 	local p = effect_params( wave )
 	local r, grow = p.r or 55, p.grow or 22
@@ -673,8 +706,9 @@ function wave_converts( wave, b )
 		local w = b[key]
 		if w then
 			local radius = math.floor( WAVE_GROUND[key] and math.min( r, 20 + 10 * w ) or r )
+			local set = key == "crush" and crushes( spell ) or SIGN_CONVERTS[key]
 			EntityAddComponent2( wave, "MagicConvertMaterialComponent", {
-				from_material_array = SIGN_CONVERTS[key].from, to_material_array = SIGN_CONVERTS[key].to, radius = radius,
+				from_material_array = set.from, to_material_array = set.to, radius = radius,
 				is_circle = true, loop = false, kill_when_finished = false, steps_per_frame = math.max( 1, math.ceil( radius / grow ) ),
 				clean_stains = key == "purify",
 			} )
@@ -697,7 +731,12 @@ local function place( ctx, at )
 	return px, py
 end
 
--- A spell of an element in a form: its carriers from the hand, around the caster or at the cursor
+-- what a resonance's cast (resonance_cast.lua) works with
+KIT = { spawn = spawn, raw = spawn_raw, add_script = add_script, add_var = add_var, add_death_script = add_death_script,
+	convert = convert, scale_size = scale_size, place = place }
+
+-- A spell of an element in a form: its carriers from the hand, around the caster or at the cursor; a resonance that
+-- makes magic of its own in their place
 local function cast_form( ctx )
 	local spell = ctx.spell
 	local effect = dictionary_effect( spell.element, spell.form, spell.floats )
@@ -706,6 +745,7 @@ local function cast_form( ctx )
 		return { SPARK }
 	end
 	local b = spell.behaviors or {}
+	local resonance = spell.resonance and RESONANCE_BY_KEY[spell.resonance]
 	-- where it appears; a field aimed with a crosshair, Sights Set or Projection appears at the target
 	local px, py = ctx.x + ctx.aim_x * HAND_OFFSET, ctx.y + ctx.aim_y * HAND_OFFSET
 	local at = effect.at
@@ -729,11 +769,16 @@ local function cast_form( ctx )
 		at = nil
 	end
 	if at then px, py = place( ctx, at ) end
+	local own = resonance and RESONANCE_CAST[resonance.key]
+	if own and own.cast then
+		local made = own.cast( KIT, ctx, effect, px, py )
+		if made then return made end
+	end
 
 	if effect.carrier == "nova" then
 		if spell.element == "shockwave" then return MANIFESTS.shockwave( ctx ) end
 		local made = MANIFESTS.nova( ctx, px, py )
-		wave_converts( made[1], b )
+		wave_converts( made[1], b, spell )
 		return made
 	elseif effect.carrier == "ring" then
 		return MANIFESTS.orbit_ring( ctx, px, py )
@@ -743,8 +788,8 @@ local function cast_form( ctx )
 	local base = math.atan2( ctx.aim_y, ctx.aim_x )
 	if at == "sky" then base = math.pi / 2 end
 	local spread = math.rad( math.max( 0, 2 + 20 * ( spell.spread - spell.focus ) + 15 * ( spell.directed and 0 or spell.tilt ) ) )
-	-- piercing signs: as many projectiles as signs
-	local pierce = b.pierce or 0
+	-- piercing signs: as many projectiles as signs (unless a resonance takes them: Cluster's one big shot)
+	local pierce = ( resonance and resonance.consumed.pierce ) and 0 or ( b.pierce or 0 )
 	local copies = math.max( effect.copies or 1, pierce )
 	local pattern = math.rad( ( effect.copies or 1 ) >= pierce and effect.pattern or 6 * pierce )
 	local cast = {}
@@ -789,7 +834,7 @@ function cast_spell( shooter, spell, x, y, aim_x, aim_y, target_x, target_y, fra
 	-- a sloppy or lopsided seal may misfire: it fizzles into a spark or releases a wrong element
 	if not nested and Random( 1, 100 ) <= misfire_chance( spell ) then
 		spell.element = Random( 1, 2 ) == 1 and "" or MISFIRE_ELEMENTS[Random( 1, #MISFIRE_ELEMENTS )]
-		spell.manifest, spell.shape = nil, nil
+		spell.manifest, spell.shape, spell.resonance = nil, nil, nil
 		ctx.misfire = true
 	end
 	if not nested then seal_flash( ctx ) end

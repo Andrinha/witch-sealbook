@@ -64,7 +64,10 @@ end
 local function numbers( spell, how, power )
 	local b, look = spell.behaviors, DICTIONARY_LOOKS[spell.element] or {}
 	local tuned = spell_tuning( spell, power )
-	local function amount( key ) return b[key] and SIGN_AMOUNTS[key]( b[key] ) or nil end
+	-- a resonance (resonances.lua) takes some signs for itself, and has numbers of its own
+	local resonance = spell.resonance and not spell.named and RESONANCE_BY_KEY[spell.resonance]
+	if resonance and resonance.replaces then return {} end -- its own magic, not the carrier: told in its words
+	local function amount( key ) return b[key] and not ( resonance and resonance.consumed[key] ) and SIGN_AMOUNTS[key]( b[key] ) or nil end
 	local grow, shrink, strong, point = amount( "grow" ), amount( "shrink" ), amount( "strong" ), amount( "point" )
 	local size = ( grow and grow.size or 1 ) * ( shrink and shrink.size or 1 )
 	local base, n, carrier = DICTIONARY_CARRIER_BASE, {}, how.carrier
@@ -88,18 +91,19 @@ local function numbers( spell, how, power )
 		local life = math.max( 1, own_life + tuned.lifetime )
 		if strong then life = math.floor( life * strong.lifetime ) end
 		if b.still and amount( "still" ) then life = life + amount( "still" ).frames end
-		n.lasts = life
+		n.lasts = resonance and resonance.lasts and resonance.lasts( life ) or life
 		local speed = ( look.speed or 200 ) * tuned.speed / ( grow and grow.slow or 1 ) * ( shrink and shrink.speed or 1 )
-			* ( point and point.speed or 1 ) * ( b.launch and amount( "launch" ).speed or 1 )
+			* ( point and point.speed or 1 ) * ( b.launch and amount( "launch" ).speed or 1 ) * ( resonance and resonance.speed or 1 )
 		if speed > 0 then n.speed = speed end
 		local generic = tuned.damage * ( grow and grow.damage or 1 ) * ( shrink and shrink.damage or 1 ) * ( strong and strong.damage or 1 )
-			* ( point and point.damage or 1 )
+			* ( point and point.damage or 1 ) * ( resonance and resonance.damage or 1 )
 		local hit = generic
 		for _, v in pairs( look.damage or {} ) do hit = hit + v * ( splash and base.splash_damage or 1 ) end
 		n.hit = hit * HP
 		local blast = splash and math.floor( ( look.explode or 0 ) / 2 ) or look.explode or 0
 		if blast > 0 then n.blast = ( blast + tuned.blast ) * size end
-		n.shots = math.max( how.effect.copies or 1, b.pierce or 0 )
+		-- piercing makes as many shots, unless a resonance takes it (Cluster's one big shot)
+		n.shots = math.max( how.effect.copies or 1, ( resonance and resonance.consumed.pierce ) and 0 or b.pierce or 0 )
 		local spread = 2 + 20 * ( spell.spread - spell.focus ) + 15 * ( spell.directed and 0 or spell.tilt )
 		if spread >= 1 and carrier ~= "hover" then n.spread = spread end
 	elseif carrier == "nova" and spell.element ~= "shockwave" then
@@ -174,6 +178,11 @@ local function touch( spell, how )
 	parts[#parts + 1] = status_word( look.status )
 	if look.material then parts[#parts + 1] = "leaves " .. look.material:gsub( "_", " " ) end
 	if ( look.knockback or 0 ) >= 60 then parts[#parts + 1] = "knocks back" end
+	-- the element's nature (element_traits.lua): how its shots and orbs fly and what they leave where they end
+	if TRAIT_CARRIERS and TRAIT_CARRIERS[how.carrier] then
+		local traits = element_traits( spell.element, how.effect.splash )
+		for _, t in ipairs( ELEMENT_TRAITS ) do if traits[t.key] then parts[#parts + 1] = t.text end end
+	end
 	return #parts > 0 and table.concat( parts, ", " ) or nil
 end
 
@@ -323,11 +332,19 @@ function spell_notes( data, plain )
 	how = how or { carrier = "field", effect = {}, at = "self", own = false }
 	-- one of the wiki's seals: its own words
 	local entry = spell.named and GRIMOIRE_BY_KEY and GRIMOIRE_BY_KEY[spell.named]
+	local resonance = spell.resonance and not spell.named and RESONANCE_BY_KEY[spell.resonance]
 	if entry then
 		add( entry.name, "head" )
 		add( entry.effect, "body" )
+	elseif resonance and resonance.replaces then
+		add( ( resonance_title( resonance, spell.element ) .. ": " .. resonance.text ):gsub( "^%l", string.upper ), "head" )
 	else
 		add( heading( spell, how ), "head" )
+	end
+	-- a resonance (resonances.lua): what it does and what it is drawn of; one that makes magic of its own has none of the
+	-- carrier's numbers, nor its touch
+	if resonance then
+		add( "Resonance - " .. resonance_title( resonance, spell.element ) .. ": " .. resonance.about( spell ), "resonance" )
 	end
 	local n = ( spell.manifest or spell.shape ) and {} or numbers( spell, how, power )
 	local said = {}
@@ -335,9 +352,11 @@ function spell_notes( data, plain )
 		if n[key] and not ( key == "shots" and n[key] == 1 ) then said[#said + 1] = number_text( key, n[key] ) end
 	end
 	add( table.concat( said, ", " ), "body" )
-	add( touch( spell, how ), "body" )
+	if not ( resonance and resonance.replaces ) then add( touch( spell, how ), "body" ) end
 	for _, b in ipairs( DICTIONARY_BEHAVIORS ) do
 		local w = spell.behaviors[b.key]
+		-- the signs a resonance takes for itself, or that only it reads, are told by the resonance
+		if resonance and w and ( resonance.consumed[b.key] or not dictionary_behavior_works( b.key, how.carrier ) ) then w = nil end
 		if w and b.key ~= "thrust" and b.key ~= "float" then
 			local text, test = sign_text( b.key, w, spell, how )
 			add( given_by( b.key ) .. ": " .. text, "sign" )

@@ -147,7 +147,8 @@ class Notes(unittest.TestCase):
         for p in self.pages:
             lines = list(notes(p).values())
             self.assertEqual("head", lines[0]["kind"], p["key"])
-            signs = [l["text"] for l in lines if l["kind"] == "sign"]
+            # a resonance tells the signs it is made of in its own line (files/resonances.lua)
+            signs = [l["text"] for l in lines if l["kind"] in ("sign", "resonance")]
             if p["sign"] not in ("plain", "alone", "nothing inside") and not p["sign"].startswith("with ") and not signs:
                 missing.append(p["name"])
         self.assertEqual([], missing[:10], len(missing))

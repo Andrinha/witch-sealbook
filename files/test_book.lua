@@ -9,6 +9,8 @@
 --       then with a pair of each other sign - the pairs tests/test_sign_effects.py checks
 --   Special, Frames, Creatures - every special sigil, frame and decorative sigil: alone, with each element sigil, and
 --       with a pair of each sign
+--   Resonances - every resonance (resonances.lua) in each form it is drawn in, with every element it takes: the forms
+--       are its items, the resonances of a form its parts
 -- A sign that does nothing to a seal is left out of its spell (seal_spell.lua): that seal has no page with it.
 --   TestBook.pages()      -> the pages: { key, name, title, sign, effect, spell (what cast.lua reads), color, tree, plain (the
 --                            page of the same seal without the sign tried) }
@@ -16,6 +18,8 @@
 --   TestBook.page( key )  -> one of them
 --   TestBook.sections()   -> the groups: { name, page, items = { { name, page, parts = { { name, page } } } } }
 --   TestBook.strokes( p ) -> a page's drawing, on the grimoire's page (SEAL_PAGE_SIZE, the ring round its middle)
+--   TestBook.resonance_entry( key ) -> a resonance as a page of the grimoire's Discoveries (notebook.lua), drawn as the
+--                            Test Book draws its pages: its recipe round its element, in its first form
 
 TestBook = {}
 local T = TestBook
@@ -49,6 +53,8 @@ local FORMS = {
 	-- Regions pointing at each other: in at the top and the bottom, out at the sides
 	{ name = "Ring", signs = { { "regions", 1 }, { "regions", 2, inverted = true } } },
 }
+local FORM_BY_NAME = {}
+for _, form in ipairs( FORMS ) do FORM_BY_NAME[form.name] = form end
 
 local function sign_name( key ) return DICTIONARY_SIGNS[key].name end
 
@@ -101,7 +107,8 @@ local function sigil_symbols( keys, size, out )
 	return out
 end
 
--- A seal: 'sigils' (keys) in the form 'form' (FORMS), 'condense': with a pair of Convergence, 'variant' (variants())
+-- A seal: 'sigils' (keys) in the form 'form' (FORMS), 'condense': with a pair of Convergence, 'variant' (variants(), or a
+-- resonance's recipe: 'keys', a pair of each sign, "~" facing out)
 local function seal_tree( sigils, form, condense, variant )
 	local symbols = sigil_symbols( sigils, form.sigil or SIGIL_SIZE, {} )
 	local dist = form.dist or SIGN_DIST
@@ -121,6 +128,11 @@ local function seal_tree( sigils, form, condense, variant )
 	end
 	if condense then pair( "convergence" ) end
 	if variant and variant.key then pair( variant.key, variant.inverted, variant.one ) end
+	for _, key in ipairs( variant and variant.keys or {} ) do
+		if #free == 0 then return nil end -- no room round the ring for another pair
+		local sign, out = key:gsub( "~$", "" )
+		pair( sign, out > 0 )
+	end
 	local frames = {}
 	if form.frame then frames[1] = { key = form.frame, score = SCORE, size = FRAME_SIZE } end
 	return { ring = { x = 0, y = 0, r = R, roundness = 0 }, symbols = symbols, layers = {}, frames = frames, subs = {},
@@ -177,6 +189,7 @@ local function add_page( item, part, key, tree, spell, sign, plain )
 		effect = "Casts: " .. spell.summary .. ". Drawn: " .. recipe_text( tree ) .. "."
 			.. ( spell.quality ~= "Flawless seal!" and ( " " .. spell.quality .. "." ) or "" ) }
 	BY_KEY[PAGES[#PAGES].key] = PAGES[#PAGES]
+	PAGES[#PAGES].index = #PAGES
 	if not part.page then part.page = #PAGES end
 	if not item.page then item.page = #PAGES end
 	return #PAGES
@@ -186,6 +199,31 @@ local function new_part( item, name )
 	local part = { name = name }
 	item.parts[#item.parts + 1] = part
 	return part
+end
+
+-- every resonance in each form it is drawn in, with every element ('list': { element, sigils, condense, item }) it
+-- takes; beside the same element's plain page in that form. The forms are the group's items (one short row over the
+-- book), the resonances of a form their parts (the row under it).
+local function resonance_pages( g, item, list )
+	for _, form in ipairs( FORMS ) do
+		local form_name, it = form.name, nil
+		for _, r in ipairs( RESONANCES ) do
+			local drawn = false
+			for _, name in ipairs( r.recipe.forms ) do if name == form_name then drawn = true end end
+			it = it or ( drawn and item( g, "res_" .. form_name:lower(), form_name ) )
+			local part = drawn and new_part( it, r.name )
+			local variant = { keys = r.recipe.signs, turn = r.recipe.turned and SPIN_TURN or nil }
+			for _, e in ipairs( drawn and list or {} ) do
+				local t = seal_tree( e.sigils, form, e.condense, variant )
+				local spell = t and compile( t )
+				if spell and spell.resonance == r.key then
+					local plain = BY_KEY["test:" .. e.item .. "/" .. form_name:lower()]
+					add_page( it, part, "res/" .. r.key .. "/" .. form_name:lower() .. "/" .. e.element, t, spell,
+						DICTIONARY_ELEMENTS[e.element].name, plain and plain.index )
+				end
+			end
+		end
+	end
 end
 
 -- an element in every form, plain and with each sign that does something there
@@ -277,14 +315,23 @@ local function build()
 	local list = {}
 	for _, e in ipairs( elements ) do list[#list + 1] = { element = DICTIONARY_SIGILS[e.sigil].element, sigils = { e.sigil } } end
 	for _, m in ipairs( mixed ) do list[#list + 1] = m end
+	-- every element the book has pages of, for the resonances: its sigils, condensed or not, and its item's key
+	local all = {}
+	for _, e in ipairs( elements ) do
+		all[#all + 1] = { element = DICTIONARY_SIGILS[e.sigil].element, sigils = { e.sigil }, item = e.sigil }
+	end
 	for _, e in ipairs( list ) do
 		local into = DICTIONARY_ELEMENTS[e.element].condensed
 		if into and not seen[into] then
 			seen[into] = true
 			element_pages( item( condensed, into, DICTIONARY_ELEMENTS[into].name ), e.sigils, true )
+			all[#all + 1] = { element = into, sigils = e.sigils, condense = true, item = into }
 		end
 	end
-	for _, m in ipairs( mixed ) do element_pages( item( mixes, m.element, DICTIONARY_ELEMENTS[m.element].name ), m.sigils ) end
+	for _, m in ipairs( mixed ) do
+		element_pages( item( mixes, m.element, DICTIONARY_ELEMENTS[m.element].name ), m.sigils )
+		all[#all + 1] = { element = m.element, sigils = m.sigils, item = m.element }
+	end
 	-- the sigils, frames and creatures that manifest in a way of their own (the pages follow the groups' order)
 	local special = group( "Special" )
 	local empty = item( special, "empty", "Empty Ring" )
@@ -306,6 +353,7 @@ local function build()
 		local def = DICTIONARY_SIGILS[key]
 		if def.shape then special_pages( item( creatures, key, def.name ), { key }, nil, elements ) end
 	end
+	resonance_pages( group( "Resonances" ), item, all )
 	-- the first page of each group, item and part; the parts with no page left out
 	for _, g in ipairs( SECTIONS ) do
 		for _, it in ipairs( g.items ) do
@@ -315,6 +363,24 @@ local function build()
 			g.page = g.page or it.page
 		end
 	end
+end
+
+local DISCOVERIES = {}
+function T.resonance_entry( key )
+	if DISCOVERIES[key] ~= nil then return DISCOVERIES[key] or nil end
+	local r, entry = RESONANCE_BY_KEY[key], false
+	if r then
+		local tree = seal_tree( { r.recipe.element or "fire" }, FORM_BY_NAME[r.recipe.forms[1]], false,
+			{ keys = r.recipe.signs, turn = r.recipe.turned and SPIN_TURN or nil } )
+		local spell = tree and compile( tree )
+		if spell and spell.resonance == key then
+			entry = { key = "res:" .. key, test = true, resonance = key, name = r.name, title = r.name, category = "Discoveries",
+				sign = resonance_recipe_short( r ), spell = seal_page_data( spell ), color = spell.element, tree = tree,
+				effect = r.name .. ": " .. r.about( spell ) .. ". Drawn of " .. resonance_recipe_text( r ) .. "." }
+		end
+	end
+	DISCOVERIES[key] = entry
+	return entry or nil
 end
 
 function T.pages()

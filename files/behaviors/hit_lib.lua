@@ -1,6 +1,7 @@
 -- Shared by the scripts that run when a seal projectile ends (cast.lua add_death_script): where it ended, what it
 -- carried, whom it hit.
 dofile_once( "mods/witch_notebook/files/effects/lib.lua" )
+dofile_once( "mods/witch_notebook/files/resonances.lua" ) -- what the resonances' scripts do, and how much
 
 function hit_var( e, name )
 	for _, comp in ipairs( EntityGetComponentIncludingDisabled( e, "VariableStorageComponent" ) or {} ) do
