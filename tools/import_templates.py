@@ -155,6 +155,9 @@ VARIANTS = {
     # the wiki's own Expansion: corners one inside the other, not two alike one over the other - drawn so, the two
     # read as Binding's arcs, one inside the other
     "expansion": [nested_corners(2, 0.3)],
+    # Regions drawn as a round arch, not a sharp chevron: hands round its top (Flame Shot's rows of them) and the arch,
+    # nearer Projection's box than the chevron, read as Projection
+    "regions": [[[(0.5 - 0.36 * math.cos(math.pi * i / 24), 0.85 - 0.5 * math.sin(math.pi * i / 24) ** 1.2) for i in range(25)]]],
 }
 
 # ... and sigils: fire with long horns standing apart from the sides of the triangle
@@ -205,7 +208,8 @@ def main():
         forms = [lua_shape(strokes, traced=False)] + [lua_shape(v, traced=False) for v in VARIANTS.get(key, [])]
         lines.append(f"\t{key} = {{ {', '.join(forms)} }},")
     for key, strokes in shapes.SIGNS.items():
-        lines.append(f"\t{key} = {{ {lua_shape(strokes, traced=False)} }},")
+        forms = [lua_shape(strokes, traced=False)] + [lua_shape(v, traced=False) for v in VARIANTS.get(key, [])]
+        lines.append(f"\t{key} = {{ {', '.join(forms)} }},")
     lines.append("}")
     lines.append("")
     lines.append(f"TEMPLATES_GLAIVE = {lua_shape(shapes.GLAIVE, traced=False)}")

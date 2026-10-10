@@ -475,6 +475,20 @@ local function symbols_page( seal )
 	return nil
 end
 
+-- A copy of a whole seal drawn of the book's symbols (Flame Shot's ten Regions) whose shape is a hair nearer another
+-- page (Petrification, as near as it): the page it is drawn like that has most of its symbols, the nearest of them
+local function recipe_page( seal )
+	if not GRIMOIRE or sign_count( seal ) < SYMBOLS_PAGE_SIGNS then return nil end
+	local best, best_d
+	for _, entry in ipairs( GRIMOIRE ) do
+		if ( entry.symbols or "" ) == "" and ( entry.recipe or "" ) ~= "" and symbols_alike( entry.recipe, seal.symbols ) then
+			local d = page_distance( seal, entry.key )
+			if d and d <= CANON_MATCH and ( not best_d or d < best_d ) then best, best_d = entry.key, d end
+		end
+	end
+	return best, best_d
+end
+
 -- The wiki's seal a read drawing is by its shape, and how far it is from it
 local function seal_shape_name( seal )
 	local key, distance, second = seal_canonical( seal )
@@ -507,5 +521,7 @@ end
 function seal_name( seal )
 	local key, distance = seal_shape_name( seal )
 	if key then return key, distance end
-	return symbols_page( seal )
+	key, distance = symbols_page( seal )
+	if key then return key, distance end
+	return recipe_page( seal )
 end

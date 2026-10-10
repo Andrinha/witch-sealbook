@@ -45,6 +45,7 @@ local TWIN_OVER = 0.1    -- a sign read on its own is read as its twin when it i
 local TWIN_READ = 0.45   -- ... or when it reads as the twin's sign this well ...
 local TWIN_TIE = 0.08    -- ... no more than this worse than as anything, and looks somewhat like the twin
 local TWIN_LOOK = 0.5    -- (a glyph of a wiki's seal of its own may read as a sign, but doesn't look like its twin)
+local TORN_COST = 0.03  -- (reading_value) a glyph torn in several symbols reads this much worse for each more
 local TWIN_AGREE = 0.55  -- two glyphs or more reading as one sign this well make it sure too
 local RING_ZONE = 0.55       -- by the ring a sign ...
 local RING_MARGIN = 0.04     -- ... may be read this much worse than a sigil and still count
@@ -389,7 +390,7 @@ local SIGN_STROKES = { dispersion = { min = 2 }, levitation = { min = 2 }, pull 
 	reflection = { max = 4 }, envelop = { max = 3 } }
 -- the extra ways a sign is drawn (templates.lua) need all their strokes: levitation drawn as an arrow
 -- in two strokes would take in slanted columns, a short-based column in one stroke - any bare line
-local VARIANT_STROKES = { levitation = { min = 3 }, column = { min = 2 } }
+local VARIANT_STROKES = { levitation = { min = 3 }, column = { min = 2 }, regions = { max = 1 } }
 -- center symbols with many parts can't be drawn in one or two strokes
 local SIGIL_STROKES = { aeriforms = { min = 5 }, crystal = { min = 4 }, concealment = { min = 4 }, sand = { min = 3 },
 	undulation = { min = 3 }, calling = { min = 3 }, unburning = { min = 3 }, whorl = { min = 3 }, owlcat = { min = 3 },
@@ -871,11 +872,15 @@ local function read_twins( groups, ring )
 		end
 		if not sure or only.score < TWIN_SURE then
 			-- not sure, or sure only by agreeing: may yet be another sign's twin
+			-- how well it reads on its own: torn in several signs, as all of them together (a Dispersion's arc torn from
+			-- its stem reads as Regions' arch better than the whole does, but the stem left over reads worse)
 			local weak, own = true, 0
-			for _, sym in ipairs( g.symbols or {} ) do
+			local list = g.symbols or {}
+			for _, sym in ipairs( list ) do
 				if sym.kind ~= "sign" or sym.score >= TWIN_SURE then weak = false end
-				own = math.max( own, sym.score )
+				own = own + sym.score / #list
 			end
+			if #list > 1 then own = own - TORN_COST * ( #list - 1 ) end
 			if weak and g.box.size < RING_ZONE * ring.r then
 				pieces[#pieces + 1] = { strokes = g.strokes, box = g.box, own = own }
 				of[#pieces] = gi
