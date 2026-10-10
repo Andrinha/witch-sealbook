@@ -63,6 +63,13 @@ end
 -- summary, quality } or nil and an error text
 function compile_spell( seal )
 	local sigils, signs, specials = {}, {}, {}
+	-- one of the wiki's seals casts as its page (seal_page_data): a sign of it drawn doubtfully - a Flame Shot's column
+	-- read about as well as Dispersion - doesn't stop it
+	local wiki
+	local function wiki_seal()
+		if wiki == nil then wiki = seal_name( seal ) ~= nil end
+		return wiki
+	end
 	for _, symbol in ipairs( seal.symbols ) do
 		if symbol.kind == "sigil" then
 			local def = DICTIONARY_SIGILS[symbol.key] or {}
@@ -71,11 +78,11 @@ function compile_spell( seal )
 		else
 			-- Keep ambiguous candidates in the parse so segmentation can finish, but do not silently
 			-- turn them into effects. The player can correct the sign and retry the closed seal.
-			if symbol.size < SIGN_MIN_SIZE then
+			if symbol.size < SIGN_MIN_SIZE and not wiki_seal() then
 				trouble( seal, { symbol } )
 				return nil, "A sign is too small"
 			end
-			if symbol.score < SEAL_GOOD_SCORE and symbol.margin and symbol.margin < SIGN_MIN_MARGIN then
+			if symbol.score < SEAL_GOOD_SCORE and symbol.margin and symbol.margin < SIGN_MIN_MARGIN and not wiki_seal() then
 				trouble( seal, { symbol } )
 				return nil, "A sign is ambiguous"
 			end
@@ -421,7 +428,7 @@ function extra_behaviors( seal, entry )
 	end
 	local have, extras = {}, {}
 	for _, sym in ipairs( seal.symbols or {} ) do
-		if sym.kind == "sign" and sym.score >= EXTRA_SURE then
+		if sym.kind == "sign" and sym.score >= EXTRA_SURE and sym.size >= SIGN_MIN_SIZE then
 			local k = "sign:" .. sym.key
 			have[k] = ( have[k] or 0 ) + 1
 			if have[k] > ( want[k] or 0 ) then

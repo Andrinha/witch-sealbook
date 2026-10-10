@@ -552,6 +552,61 @@ local function flicker_shape( strokes, box )
 	return valleys >= 4 and inward >= 2
 end
 
+-- The water sigil is an S between two drops. As one point cloud the drops' outlines outweigh the S, so drops drawn
+-- rounder, bigger or farther out than the template's read poorly as water - and the S alone reads as the wind sigil's
+-- bare S. Read by its parts: the tallest stroke an S, and left and right of it a small closed loop each (a drop, an
+-- oval, a circle; in one stroke or two). A ray, a chevron or a dot is no drop: the wind, sand and Aeriforms sigils keep
+-- their own reading. Returns how well the S reads as an S, or nil.
+local DROP_LOOP = 1.8      -- a drop's line is at least this many times as long as the drop is big
+local DROP_GAP = 0.4       -- ... its ends this close (shares of its size): a loop, closed or nearly
+local DROP_MIN, DROP_MAX = 0.15, 0.8 -- a drop's size against the S's height ...
+local DROP_REACH = 1.0     -- ... its middle no farther to the side of the S's middle than this ...
+local DROP_LEVEL = 0.5     -- ... nor above or below it
+local s_set
+local function water_shape( strokes )
+	if #strokes < 3 or #strokes > 5 then return nil end
+	local s, sb
+	for _, stroke in ipairs( strokes ) do
+		local b = bbox( { stroke } )
+		if #stroke >= 2 and ( not sb or b.h > sb.h ) then s, sb = stroke, b end
+	end
+	if not sb or sb.h <= 0 then return nil end
+	local sides = { {}, {} }
+	for _, stroke in ipairs( strokes ) do
+		if stroke ~= s then table.insert( sides[bbox( { stroke } ).cx < sb.cx and 1 or 2], stroke ) end
+	end
+	local function close( a, b, d ) return ( a.x - b.x ) ^ 2 + ( a.y - b.y ) ^ 2 <= d * d end
+	for side, list in ipairs( sides ) do
+		if #list == 0 or #list > 2 then return nil end
+		local b = bbox( list )
+		local length = 0
+		for _, stroke in ipairs( list ) do
+			if #stroke < 2 then return nil end
+			length = length + stroke_length( stroke )
+		end
+		local off = ( b.cx - sb.cx ) * ( side == 1 and -1 or 1 )
+		if b.size < DROP_MIN * sb.h or b.size > DROP_MAX * sb.h or off <= 0 or off > DROP_REACH * sb.h
+			or math.abs( b.cy - sb.cy ) > DROP_LEVEL * sb.h or length < DROP_LOOP * b.size or math.min( b.w, b.h ) < 0.3 * b.size then
+			return nil
+		end
+		local gap = DROP_GAP * b.size
+		local p, q = list[1], list[2]
+		if q then
+			local a1, a2, b1, b2 = p[1], p[#p], q[1], q[#q]
+			if not ( ( close( a1, b1, gap ) and close( a2, b2, gap ) ) or ( close( a1, b2, gap ) and close( a2, b1, gap ) ) ) then return nil end
+		elseif not close( p[1], p[#p], gap ) then
+			return nil
+		end
+	end
+	if not s_set then
+		-- the water sigil's own S, and the bare S hands draw (the wind sigil's)
+		s_set = recognizer_new_set( { { key = "s", shape = { TEMPLATES_SIGILS.water[1][1] } },
+			{ key = "s", shape = TEMPLATES_SIGILS.wind[#TEMPLATES_SIGILS.wind] } } )
+	end
+	local _, score = recognizer_match( s_set, { s } )
+	return score
+end
+
 -- A sign's pose: how it is turned against facing the center (radians) -> inverted, turn. One angle
 -- covers both: near 0 the sign faces the center, near half a turn it faces outwards (inverted), and
 -- what is left is how far it is turned sideways. A sign that looks the same turned by a part of the
@@ -586,6 +641,8 @@ local function recognize_symbol_uncached( strokes, box, ring )
 	if key == "flicker" and not flicker_shape( strokes, box ) then
 		key, score = recognizer_match( non_flicker_sigil_set, strokes )
 	end
+	local water = size >= SIGIL_MIN_SIZE and water_shape( strokes )
+	if water and water > score then key, score = "water", water end
 	local best = { kind = "sigil", key = key, score = score, inverted = false }
 	local spanning = size >= SPAN and math.max( box.w, box.h ) >= 2.2 * math.max( math.min( box.w, box.h ), 1 )
 	if dist >= CENTER_ZONE or spanning or score < STRONG_SIGIL then

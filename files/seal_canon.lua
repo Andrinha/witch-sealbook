@@ -437,6 +437,13 @@ end
 -- those symbols. A few symbols say little - a lone sword sigil is not yet Raincleaver, wind with a levitation sign
 -- is not always Skysoaring - so such a seal must also look like its page (Skysoaring's big arrow over the sigil)
 local SYMBOLS_PAGE_SIGNS = 3
+local function sign_count( seal )
+	local signs = 0
+	for _, s in ipairs( seal.symbols or {} ) do
+		if s.kind == "sign" then signs = signs + 1 end
+	end
+	return signs
+end
 local pages_by_symbols
 local function symbols_page( seal )
 	if not GRIMOIRE then return nil end
@@ -459,11 +466,7 @@ local function symbols_page( seal )
 	for name, k in pairs( list ) do
 		if name ~= "count" then key = k end
 	end
-	local signs = 0
-	for _, s in ipairs( seal.symbols or {} ) do
-		if s.kind == "sign" then signs = signs + 1 end
-	end
-	if signs >= SYMBOLS_PAGE_SIGNS then return key end
+	if sign_count( seal ) >= SYMBOLS_PAGE_SIGNS then return key end
 	-- a lone sigil is every plain seal of that sigil: it names the page only when drawn as the page is, not when it is
 	-- merely nearer to it than to any other page
 	local lone = #( seal.symbols or {} ) <= 1
@@ -490,6 +493,11 @@ local function seal_shape_name( seal )
 		-- with a sigil in its middle that no page has, it is none of the wiki's seals: it is read sign by sign
 		local page, element = seal_middle( seal.strokes, entry )
 		if not element then return page.key, distance end
+	end
+	-- a whole seal drawn of the book's symbols (Flame Shot's ten Regions): a copy with a few of its signs more or fewer -
+	-- hands don't count them - is still that seal when it looks like it and most of its symbols are the page's
+	if ( entry.recipe or "" ) ~= "" and sign_count( seal ) >= SYMBOLS_PAGE_SIGNS and symbols_alike( entry.recipe, seal.symbols ) then
+		return key, distance
 	end
 	return nil
 end

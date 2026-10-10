@@ -128,6 +128,18 @@ OWN_SIGNS = {
 }
 
 
+def nested_corners(n, step):
+    """the wiki's Enlarge sign as hands draw it: n right-angle corners one inside the other, each 'step' farther in and
+    shorter in the arm (their arms end in line), pointing outwards - down, in the bottom-of-ring pose"""
+    c = math.sqrt(0.5)
+    corners = [[(1, k * step), (k * step, k * step), (k * step, 1)] for k in range(n)]
+    turned = [[(c * (y - x), -c * (x + y)) for x, y in corner] for corner in corners]  # the vertex's (-1, -1) turned down
+    xs = [x for s in turned for x, _ in s]
+    ys = [y for s in turned for _, y in s]
+    size = max(max(xs) - min(xs), max(ys) - min(ys))
+    return [line(*[((x - min(xs)) / size, (y - min(ys)) / size + (1 - (max(ys) - min(ys)) / size) / 2) for x, y in s]) for s in turned]
+
+
 def levitation(arrow, base=1.0):
     """the levitation sign with an arrowhead and a base of 'arrow' and 'base' times the simulator's size"""
     a, b = 0.26 * arrow, 0.32 * base
@@ -140,6 +152,9 @@ VARIANTS = {
     "levitation": [levitation(0.5), levitation(0.5, 0.4)],
     # a long stem on a short base: without a head it is still a column, not an arrow-like levitation
     "column": [[line((0.5, 0.1), (0.5, 0.78)), line((0.36, 0.78), (0.64, 0.78))]],
+    # the wiki's own Expansion: corners one inside the other, not two alike one over the other - drawn so, the two
+    # read as Binding's arcs, one inside the other
+    "expansion": [nested_corners(2, 0.3)],
 }
 
 # ... and sigils: fire with long horns standing apart from the sides of the triangle
@@ -187,7 +202,8 @@ def main():
     arc = [(0.5 + 0.28 * math.cos(a), base + 0.06 + 0.16 * math.sin(a)) for a in [math.pi * i / 20 for i in range(21)]]
     lines.append(f"\tdispersion = {{ {lua_shape(column + [arc[::-1]])} }},")
     for key, strokes in OWN_SIGNS.items():
-        lines.append(f"\t{key} = {{ {lua_shape(strokes, traced=False)} }},")
+        forms = [lua_shape(strokes, traced=False)] + [lua_shape(v, traced=False) for v in VARIANTS.get(key, [])]
+        lines.append(f"\t{key} = {{ {', '.join(forms)} }},")
     for key, strokes in shapes.SIGNS.items():
         lines.append(f"\t{key} = {{ {lua_shape(strokes, traced=False)} }},")
     lines.append("}")

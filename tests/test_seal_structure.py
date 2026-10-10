@@ -8,6 +8,7 @@ import sys
 import unittest
 
 import run_tests as fixtures
+from harness import load_reader
 
 
 class FlickerShapeTests(unittest.TestCase):
@@ -148,18 +149,66 @@ class ModifierAcceptanceTests(unittest.TestCase):
 
 
 class WaterIsNotWindTests(unittest.TestCase):
-    """The water sigil drawn small and rough: its S alone reads as wind (the wind sigil's simplest template) and its drops
-    as signs beside it, in the middle of the seal - where no seal has signs. Read whole, it is water."""
+    """The water sigil drawn small and rough, or as players draw it - a rounder S, the drops round, big or far out, a drop
+    in two strokes: its S alone reads as wind (the wind sigil's simplest template) and its drops as signs beside it, in
+    the middle of the seal - where no seal has signs. Read whole, or by its parts (seal.lua water_shape), it is water."""
     @classmethod
     def setUpClass(cls):
         cls.lua = fixtures.load_mod()
         cls.drawings = json.loads((Path(fixtures.MOD) / "tests/data/water_not_wind.json").read_text(encoding="utf-8"))
+        source = (Path(fixtures.MOD) / "files/seal.lua").read_text(encoding="utf-8")
+        cls.lua.execute(source + "\nfunction test_water_shape(strokes) return water_shape(strokes) end")
 
     def test_the_drops_beside_the_s_are_water(self):
-        self.assertGreater(len(self.drawings), 0)
+        self.assertGreater(len(self.drawings), 3)
         for i, d in enumerate(self.drawings):
             result, spell = fixtures.run(self.lua, [[tuple(p) for p in st] for st in d["strokes"]])
             self.assertEqual("water:burst", result, f"drawing {i}: {d['note']}")
+
+    def test_rays_chevrons_and_dots_beside_an_s_are_no_drops(self):
+        # the sigils with an S between marks of other kinds keep their own reading
+        templates = fixtures.templates(self.lua)
+        for key in ("wind", "sand", "aeriforms", "undulation"):
+            strokes = fixtures.place(templates[("sigil", key)], 90, 90, 30, tilt=0)
+            self.assertIsNone(self.lua.globals().test_water_shape(fixtures.lua_strokes(self.lua, strokes)), key)
+        s = fixtures.place([templates[("sigil", "water")][0]], 90, 90, 30, tilt=0)
+        for side in (-1, 1):
+            s.append(fixtures.densify([(90 + side * 12, 86), (90 + side * 16, 96)]))
+        self.assertIsNone(self.lua.globals().test_water_shape(fixtures.lua_strokes(self.lua, s)), "rays")
+
+
+class ExpansionCornersTests(unittest.TestCase):
+    """The wiki draws Expansion as corners one inside the other; drawn so they read as Binding's two arcs, one inside the
+    other, unless the sign has that drawing too (tools/import_templates.py). Binding stays Binding."""
+    @classmethod
+    def setUpClass(cls):
+        cls.lua = fixtures.load_mod()
+        cls.drawings = json.loads((Path(fixtures.MOD) / "tests/data/expansion_corners.json").read_text(encoding="utf-8"))
+
+    def test_nested_corners_are_expansion(self):
+        self.assertGreater(len(self.drawings), 4)
+        for i, d in enumerate(self.drawings):
+            result, spell = fixtures.run(self.lua, [[tuple(p) for p in st] for st in d["strokes"]])
+            self.assertIsNotNone(spell, f"drawing {i}: {d['note']}: {result}")
+            self.assertEqual([d["behavior"]], list(spell["behaviors"].keys()), f"drawing {i}: {d['note']}")
+
+
+class FlameShotCopiesTests(unittest.TestCase):
+    """Flame Shot copied by hand: a few Regions more or fewer than the page's ten (hands don't count them), or its column
+    read about as well as Dispersion - the seal is still Flame Shot (seal_canon.lua, seal_spell.lua)."""
+    @classmethod
+    def setUpClass(cls):
+        cls.lua = load_reader()
+        cls.drawings = json.loads((Path(fixtures.MOD) / "tests/data/flame_shot_copies.json").read_text(encoding="utf-8"))
+
+    def test_copies_are_flame_shot(self):
+        self.assertGreater(len(self.drawings), 0)
+        for i, d in enumerate(self.drawings):
+            strokes = [[tuple(p) for p in st] for st in d["strokes"]]
+            res = self.lua.eval("read_spell")(fixtures.lua_strokes(self.lua, strokes))
+            spell = res[0] if isinstance(res, tuple) else res
+            self.assertIsNotNone(spell, f"drawing {i}: {d['note']}: {res[1] if isinstance(res, tuple) else ''}")
+            self.assertEqual(d["named"], spell["named"], f"drawing {i}: {d['note']}")
 
 
 class TwinSignsTests(unittest.TestCase):
