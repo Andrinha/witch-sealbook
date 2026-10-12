@@ -292,6 +292,23 @@ class SpiralingFlame(unittest.TestCase):
             ComponentSetValue2(CONTROLS, "mButtonFrameFire", W.frame + 1)
             simulate(2)
         ''')
+        # Tier IV seals recharge longer than the first stream was held. An early click spends no amplification.
+        self.assertFalse(list(lua.eval('EntityGetWithTag("witch_spiraling_stream")').values()))
+        self.assertEqual(lua.eval('GlobalsGetValue(AMPLIFY_VAR, "0")'), "2")
+        lua.execute('''
+            ComponentSetValue2(CONTROLS, "mButtonDownFire", false)
+            local ready
+            for _, comp in ipairs(EntityGetComponentIncludingDisabled(BOOK_ITEM, "VariableStorageComponent")) do
+                if ComponentGetValue2(comp, "name") == SPELLBOOK_NEXT_CAST_VAR then
+                    ready = ComponentGetValue2(comp, "value_int")
+                end
+            end
+            assert(ready, "the book must store its next cast frame")
+            simulate(math.max(1, ready - W.frame))
+            ComponentSetValue2(CONTROLS, "mButtonDownFire", true)
+            ComponentSetValue2(CONTROLS, "mButtonFrameFire", W.frame + 1)
+            simulate(2)
+        ''')
         ids = list(lua.eval('EntityGetWithTag("witch_spiraling_stream")').values())
         self.assertEqual(len(ids), 1)
         self.assertNotEqual(ids[0], effect)

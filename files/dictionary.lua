@@ -133,7 +133,8 @@ DICTIONARY_CENTER_ORDER = { "fire", "water", "wind", "earth", "light", "crystal"
 --   hint: what it does, in the book's legend
 --   symmetry: how many times the sign looks the same in one turn around (1: never; 2: turned upside
 --         down too - it can't be inverted; 3: a triangle - turned 60 degrees it is inverted)
---   mirror: the sign has a mirrored twin that means the other way round (the spiraling wind)
+--   mirror: the sign is read drawn mirrored too: its twin means the other way round (the spiraling wind), or the same
+--         (Stability's waves, Purification's curl: the wiki and the book draw them mirrored)
 DICTIONARY_SIGNS = {
 	column = {
 		name = "Column", hint = "flies", type = "directional", form = "column", behavior = "thrust",
@@ -180,7 +181,7 @@ DICTIONARY_SIGNS = {
 		inverted = { behavior = "shrink", range = 0.1 },
 	},
 	stability = {
-		name = "Stability", hint = "hangs still", type = "none", symmetry = 2, behavior = "still", lifetime = 0.2,
+		name = "Stability", hint = "hangs still", type = "none", symmetry = 2, mirror = true, behavior = "still", lifetime = 0.2,
 	},
 	-- signs of the wiki's other spells (Signs Explained)
 	regions = {
@@ -211,7 +212,7 @@ DICTIONARY_SIGNS = {
 	diamond = { name = "Diamond", hint = "meaning unknown", type = "none", symmetry = 4 },
 	-- the Water Orb: a sphere over the seal where the spell's material collects
 	orb = { name = "Orb", hint = "container", type = "none", symmetry = 2, form = "levitation", behavior = "contain", lifetime = 0.2 },
-	purify = { name = "Purification", hint = "purifies", type = "none", invertible = false, behavior = "purify" },
+	purify = { name = "Purification", hint = "purifies", type = "none", invertible = false, mirror = true, behavior = "purify" },
 	link = { name = "Link", hint = "in a chain", type = "none", invertible = false, behavior = "link" },
 	stillness = { name = "Stillness", hint = "keeps in place", type = "semi", behavior = "still", lifetime = 0.3,
 		inverted = { behavior = "still", lifetime = 0.3 } },

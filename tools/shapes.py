@@ -88,55 +88,62 @@ def polygon(cx, cy, r, sides, start=-90):
 # ---------------------------------------------------------------- signs (bottom of the ring, facing up)
 
 SIGNS = {
+    # Stability and Level Planes: two waves side by side, close together
+    "stability": [curve((0.43, 0.03), (0.31, 0.2), (0.32, 0.38), (0.46, 0.52), (0.48, 0.7), (0.36, 0.97)),
+                  curve((0.65, 0.03), (0.53, 0.2), (0.54, 0.38), (0.68, 0.52), (0.7, 0.7), (0.58, 0.97))],
     # Regions: a chevron pointing where the magic manifests (the wiki's Direction); pointing outwards it is
     # also the Launch sign of the Bird of Light Beacon
     "regions": [line((0.12, 0.8), (0.5, 0.22), (0.88, 0.8))],
-    # Sights Set: an arrow with a diamond at its tail
-    "sights": [line((0.5, 0.08), (0.5, 0.66)), line((0.3, 0.3), (0.5, 0.08), (0.7, 0.3)),
-               line((0.5, 0.66), (0.63, 0.8), (0.5, 0.94), (0.37, 0.8), (0.5, 0.66))],
-    # Strengthening: a triangle crossed by a long bar
-    "strengthen": [line((0.5, 0.12), (0.83, 0.82), (0.17, 0.82), (0.5, 0.12)), line((0.0, 0.6), (1.0, 0.6))],
-    # Entwining: an I-beam whose bars turn up at the top and down at the bottom
-    "entwine": [line((0.2, 0.04), (0.2, 0.2), (0.8, 0.2), (0.8, 0.04)), line((0.5, 0.2), (0.5, 0.8)),
-                line((0.2, 0.96), (0.2, 0.8), (0.8, 0.8), (0.8, 0.96))],
-    # Detection: three upright lines of different lengths
-    "detection": [line((0.22, 0.4), (0.22, 0.85)), line((0.5, 0.05), (0.5, 0.95)), line((0.78, 0.25), (0.78, 0.75))],
-    # Partition: a roof over a roof with a small triangle on top
-    "partition": [line((0.02, 0.78), (0.24, 0.42), (0.76, 0.42), (0.98, 0.78)), line((0.14, 0.95), (0.32, 0.62), (0.68, 0.62), (0.86, 0.95)),
-                  line((0.38, 0.42), (0.5, 0.22), (0.62, 0.42))],
+    # Sights Set: an arrow with a diamond at its tail, the stem running through the diamond
+    "sights": [line((0.5, 0.0), (0.5, 0.98)), line((0.35, 0.17), (0.5, 0.0), (0.65, 0.17)),
+               line((0.5, 0.7), (0.65, 0.84), (0.5, 0.98), (0.35, 0.84), (0.5, 0.7))],
+    # Strengthening: a triangle crossed halfway up by a bar a little wider than it
+    "strengthen": [line((0.5, 0.04), (0.96, 0.84), (0.04, 0.84), (0.5, 0.04)), line((0.0, 0.5), (1.0, 0.5))],
+    # Entwining: a stem between two cups, both open towards the center
+    "entwine": [line((0.23, 0.02), (0.23, 0.28), (0.77, 0.28), (0.77, 0.02)), line((0.5, 0.28), (0.5, 0.95)),
+                line((0.23, 0.7), (0.23, 0.95), (0.77, 0.95), (0.77, 0.7))],
+    # Detection: three upright lines, short, longer and longest
+    "detection": [line((0.24, 0.35), (0.24, 0.68)), line((0.5, 0.23), (0.5, 0.8)), line((0.75, 0.02), (0.75, 0.98))],
+    # Partition: a low roof over a low roof with a small triangle on top
+    "partition": [line((0.02, 0.4), (0.16, 0.2), (0.84, 0.2), (0.98, 0.4)), line((0.06, 0.58), (0.19, 0.37), (0.81, 0.37), (0.94, 0.58)),
+                  line((0.42, 0.2), (0.5, 0.05), (0.58, 0.2))],
     # Refuse: a diamond whose lower sides cross into legs
     "refuse": [line((0.5, 0.05), (0.78, 0.4), (0.2, 0.95)), line((0.5, 0.05), (0.22, 0.4), (0.8, 0.95))],
     # Solidification: a line with a circle at each end
     "solidify": [circle(0.5, 0.16, 0.13), line((0.5, 0.29), (0.5, 0.71)), circle(0.5, 0.84, 0.13)],
-    # Binding: two arcs, a small one under a big one
-    "binding": [arc(0.5, 0.85, 0.45, 180, 360), arc(0.5, 0.85, 0.2, 195, 345)],
+    # Binding: two flat arcs, a small one under a big one
+    "binding": [arc(0.5, 0.6, 0.58, 214, 326), arc(0.5, 0.59, 0.21, 194, 346)],
     # Envelopment: a stem with a hook at the top and a slant at the bottom
     "envelop": [line((0.82, 0.32), (0.55, 0.05), (0.55, 0.95), (0.18, 0.6))],
-    # Immobility: a circle split by a line standing on a base
-    "immobility": [circle(0.5, 0.42, 0.28), line((0.5, 0.06), (0.5, 0.88)), line((0.18, 0.88), (0.82, 0.88))],
-    # Pointing: a caret with a wavy line through it
-    "pointing": [curve((0.0, 0.62), (0.08, 0.48), (0.2, 0.56), (0.5, 0.56), (0.8, 0.56), (0.92, 0.48), (1.0, 0.62)),
-                 line((0.28, 0.92), (0.5, 0.24), (0.72, 0.92))],
-    # Mimicry: a stem with an S-curl, a ring and a fork
-    "mimicry": [line((0.5, 0.04), (0.5, 0.96)), curve((0.64, 0.1), (0.44, 0.1), (0.4, 0.2), (0.56, 0.26), (0.6, 0.34), (0.4, 0.38)),
-                circle(0.5, 0.55, 0.1), curve((0.28, 0.96), (0.34, 0.8), (0.5, 0.72), (0.66, 0.8), (0.72, 0.96))],
+    # Immobility: a wide circle split by a line standing on a base, open where the line crosses it
+    "immobility": [arc(0.5, 0.45, 0.47, 119, 241, ry=0.32), arc(0.5, 0.45, 0.47, -61, 61, ry=0.32), line((0.5, 0.02), (0.5, 0.97)),
+                   line((0.02, 0.97), (0.98, 0.97))],
+    # Pointing: a low caret with a bar through it, the bar's ends curling up and out
+    "pointing": [curve((0.05, 0.21), (0.02, 0.1), (0.1, 0.03), (0.19, 0.06), (0.17, 0.23), (0.5, 0.23), (0.83, 0.23), (0.81, 0.06),
+                       (0.9, 0.03), (0.98, 0.1), (0.95, 0.21)),
+                 line((0.26, 0.42), (0.5, 0.01), (0.74, 0.42))],
+    # Mimicry: a stem through a curl, a ring and a fork
+    "mimicry": [line((0.5, 0.01), (0.5, 0.99)), curve((0.63, 0.07), (0.46, 0.05), (0.37, 0.13), (0.44, 0.22), (0.63, 0.24)),
+                circle(0.5, 0.45, 0.1), curve((0.39, 0.87), (0.41, 0.72), (0.5, 0.63), (0.59, 0.72), (0.61, 0.86))],
     # Collection: a cross with a bar on its outer side, the open side faces the center
     "collection": [line((0.15, 0.1), (0.85, 0.9)), line((0.85, 0.1), (0.15, 0.9)), line((0.15, 0.9), (0.85, 0.9))],
-    # Gathering: a stem with two chevrons
-    "gathering": [line((0.5, 0.96), (0.5, 0.12)), line((0.2, 0.42), (0.5, 0.12), (0.8, 0.42)), line((0.2, 0.7), (0.5, 0.4), (0.8, 0.7))],
+    # Gathering: an arrow on legs - the stem runs from the arrowhead's tip down to where the legs part
+    "gathering": [line((0.1, 0.42), (0.5, 0.04), (0.9, 0.42)), line((0.5, 0.04), (0.5, 0.55)), line((0.1, 0.96), (0.5, 0.55), (0.9, 0.96))],
     # Diamond
     "diamond": [line((0.5, 0.05), (0.88, 0.5), (0.5, 0.95), (0.12, 0.5), (0.5, 0.05))],
     # Orb: a circle with a line through it
     "orb": [circle(0.5, 0.5, 0.32), line((0.5, 0.02), (0.5, 0.98))],
     # Purification: a hooked curl
-    "purify": [curve((0.46, 0.04), (0.3, 0.2), (0.28, 0.45), (0.4, 0.7), (0.6, 0.8), (0.74, 0.66), (0.66, 0.52), (0.52, 0.56))],
-    # Link: a W with a small triangle
-    "link": [line((0.02, 0.2), (0.3, 0.85), (0.5, 0.38), (0.7, 0.85), (0.98, 0.2)), line((0.36, 0.08), (0.64, 0.08), (0.5, 0.28), (0.36, 0.08))],
+    "purify": [curve((0.38, 0.03), (0.55, 0.22), (0.64, 0.45), (0.63, 0.65), (0.55, 0.84), (0.4, 0.95), (0.25, 0.94), (0.17, 0.84),
+                     (0.2, 0.72), (0.29, 0.66), (0.4, 0.68))],
+    # Link: a W under a triangle standing on its point, the W's middle peak; a short stroke inside each of its V's
+    "link": [line((0.02, 0.27), (0.26, 0.48), (0.5, 0.22), (0.74, 0.48), (0.98, 0.27)), line((0.29, 0.02), (0.71, 0.02), (0.5, 0.22), (0.29, 0.02)),
+             line((0.15, 0.14), (0.37, 0.34)), line((0.85, 0.14), (0.63, 0.34))],
     # Stillness: a stem through a cup, a bar and an arch
     "stillness": [line((0.5, 0.05), (0.5, 0.95)), line((0.22, 0.08), (0.22, 0.3), (0.78, 0.3), (0.78, 0.08)), line((0.25, 0.5), (0.75, 0.5)),
                   line((0.22, 0.95), (0.22, 0.72), (0.78, 0.72), (0.78, 0.95))],
-    # Projection: a bracket
-    "projection": [line((0.1, 0.85), (0.1, 0.25), (0.9, 0.25), (0.9, 0.85))],
+    # Projection: a low bracket
+    "projection": [line((0.05, 0.48), (0.05, 0.03), (0.95, 0.03), (0.95, 0.48))],
     # Cooling: a line between four dots
     "cooling": [line((0.5, 0.05), (0.5, 0.95)), dot(0.22, 0.3), dot(0.78, 0.3), dot(0.22, 0.7), dot(0.78, 0.7)],
     # Coil: two curves crossing near their ends
@@ -145,8 +152,8 @@ SIGNS = {
     "reflection": [line((0.2, 0.08), (0.8, 0.08), (0.2, 0.92), (0.8, 0.92), (0.2, 0.08))],
     # Sign of Wind (spiraling wind): a stem curling into a loop, the curl is the way it spins
     "windsign": [curve((0.3, 0.95), (0.28, 0.7), (0.3, 0.45), (0.38, 0.25), (0.52, 0.12), (0.68, 0.14), (0.74, 0.3), (0.64, 0.42), (0.5, 0.4), (0.48, 0.28))],
-    # Aeriforms Defined: three lines fanning out, as the rays of the wind sigil
-    "aeriform": [line((0.5, 0.08), (0.5, 0.92)), line((0.16, 0.12), (0.38, 0.88)), line((0.84, 0.12), (0.62, 0.88))],
+    # Aeriforms Defined: a line and two short ones beside its outer half, leaning towards it, as the rays of the wind sigil
+    "aeriform": [line((0.5, 0.02), (0.5, 0.98)), line((0.1, 0.5), (0.28, 0.97)), line((0.9, 0.5), (0.72, 0.97))],
 }
 
 # Glaives are drawn outside the ring, their stem touching it: the pose at the bottom of the ring, outside

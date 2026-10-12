@@ -182,8 +182,8 @@ local function transform( shape, angle )
 end
 
 -- Builds a set of templates: entries { key = ..., shape = list of strokes of { x, y } or { x, y } pairs,
--- strokes = { min, max } (optional) }. Each shape also gets tilted copies: 'tilts' (radians), by default
--- slightly both ways.
+-- strokes = { min, max } (optional), mirror (optional: the shape is a sign's mirrored twin) }. Each shape also gets
+-- tilted copies: 'tilts' (radians), by default slightly both ways.
 function recognizer_new_set( entries, tilts )
 	local set = {}
 	for _, entry in ipairs( entries ) do
@@ -194,7 +194,7 @@ function recognizer_new_set( entries, tilts )
 		end
 		for _, tilt in ipairs( tilts or TILTS ) do
 			set[#set + 1] = { key = entry.key, cloud = to_cloud( normalize( transform( shape, tilt ) ) ), strokes = entry.strokes, tilt = tilt,
-				penalty = entry.penalty }
+				penalty = entry.penalty, mirror = entry.mirror }
 		end
 	end
 	-- the least turned first: keep the upright reading when equally good poses tie

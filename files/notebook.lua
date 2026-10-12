@@ -718,6 +718,13 @@ local function too_great( spell )
 	end
 end
 
+-- where an angle on the page points (radians, 0: right, y down), in words
+local DIRECTIONS = { "on the right", "at the bottom right", "at the bottom", "at the bottom left", "on the left", "at the top left",
+	"at the top", "at the top right" }
+local function direction_name( angle )
+	return DIRECTIONS[math.floor( angle / ( math.pi / 4 ) + 0.5 ) % 8 + 1]
+end
+
 local function finish_sigil()
 	local minx, miny, maxx, maxy = math.huge, math.huge, -math.huge, -math.huge
 	for _, stroke in ipairs( cur.edit.strokes ) do
@@ -767,6 +774,9 @@ local function finish_sigil()
 		save_page()
 	else
 		cur.edit.failed = true
+		-- an open ring: where its gap is (its strokes are marked)
+		local gap = not spell and seal and seal.gap_at
+		if gap then err = err .. " - its gap is " .. direction_name( gap ) end
 		result = { text = err, frames = RESULT_FRAMES }
 	end
 end
@@ -1370,9 +1380,13 @@ local function draw_ink_panel( mx, my, clicked )
 		end
 	end
 	local y = view.panel.y + row * step
+	local left = x - 4
 	-- GuiButton fires on release: a line drawn from the page and let go over Clear must not wipe it
-	local function pressed( id, bx, by, label )
+	local function pressed( id, by, label )
 		local w, h = GuiGetTextDimensions( gui, label )
+		-- Align the labels' right edges beside the bottle, clear of the book.
+		local bx = x + BOOK_BOTTLE_W + 3 - w
+		left = math.min( left, bx - 2 )
 		notebook_button_rects[id] = { bx, by, w, h }
 		local p = press_at
 		return GuiButton( gui, id, bx, by, label ) and p ~= nil
@@ -1380,12 +1394,14 @@ local function draw_ink_panel( mx, my, clicked )
 	end
 	local color = cur.eraser_selected and GOLD_COLOR or GREY
 	GuiColorSetForNextWidget( gui, color[1], color[2], color[3], 1 )
-	if pressed( BUTTON.ERASER, x - 3, y, "Erase" ) then cur.eraser_selected = true end
+	if pressed( BUTTON.ERASER, y, "Erase" ) then cur.eraser_selected = true end
 	local back, front = spread_faces( cur.spread )
 	if not turning() and ( back == cur.edit_face or front == cur.edit_face ) then
-		if pressed( BUTTON.CLEAR, x - 3, y + 12, "Clear" ) then clear_page() end
-		if cur.edit.failed and pressed( BUTTON.RETRY, x - 3, y + 24, "Try seal" ) then finish_sigil() end
+		if pressed( BUTTON.CLEAR, y + 12, "Clear" ) then clear_page() end
+		-- any drawing can be tried: the book tells what it fails on (a ring it doesn't see closed too)
+		if #cur.edit.strokes > 0 and pressed( BUTTON.RETRY, y + 24, "Try seal" ) then finish_sigil() end
 	end
+	return left
 end
 
 -- When the selected ink has run dry, the book takes another the flasks hold
@@ -1811,13 +1827,13 @@ local function draw_book( mx, my, clicked, carried )
 	local corner = corner_at( mx, my )
 	if corner then draw_corner( corner ) end
 	draw_ribbon_end( mx, my, clicked )
-	if not wiki then draw_ink_panel( mx, my, clicked ) end
-	-- the Test Book: what the seals on view do, beside their pages
 	local left, right = view.panel.x - 4, view.right + 4
+	if not wiki then left = draw_ink_panel( mx, my, clicked ) end
+	-- the Test Book: what the seals on view do, beside their pages
 	if cur.def.test then
 		local sw = GuiGetScreenDimensions( gui )
 		local lw, rw = math.min( NOTES_WIDTH, view.cover.x - 14 ), math.min( NOTES_WIDTH, sw - view.right - 14 )
-		left, right = view.cover.x - 10 - lw, view.right + 8 + rw + 2
+		left, right = math.min( left, view.cover.x - 10 - lw ), view.right + 8 + rw + 2
 		if not turning() then
 			local back, front = spread_faces( cur.spread )
 			draw_test_notes( back, view.cover.x - 8 - lw, lw )
@@ -1895,6 +1911,11 @@ function notebook_view()
 	local back, front = spread_faces( cur.spread )
 	return view, ( not wiki and ( back == blank_page() or back == last_blank_page() ) and "back" )
 		or ( not wiki and ( front == blank_page() or front == last_blank_page() ) and "front" ) or nil
+end
+
+-- For the offline tests: what the book says under it now (a seal that failed: why), or nil
+function notebook_result()
+	return result and result.text
 end
 
 function notebook_on_player_spawned( player )

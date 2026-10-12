@@ -135,6 +135,25 @@ class RecognizerTests(unittest.TestCase):
         self.assertEqual(tied["margin"], 0)
         self.assertIsNone(self.lua.globals().recognizer_best(templates, shape, 1, True))
 
+    def test_mirrored_spiraling_wind_reverses_the_compiled_spin(self):
+        import run_tests as fixtures
+
+        lua = fixtures.load_mod()
+        templates = fixtures.templates(lua)
+        ring = [(90 + 68 * math.cos(i * math.tau / 430), 90 + 68 * math.sin(i * math.tau / 430)) for i in range(431)]
+        spins = []
+        for mirror in (False, True):
+            strokes = [ring] + fixtures.place(templates[("sigil", "fire")], 90, 90, 28, tilt=0, noise=0)
+            shape = templates[("sign", "windsign")]
+            if mirror:
+                shape = [[(1 - x, y) for x, y in stroke] for stroke in shape]
+            strokes += fixtures.place(shape, 90, 134, 22, tilt=0, noise=0)
+            result, spell = fixtures.run(lua, strokes)
+            self.assertIsNotNone(spell, result)
+            spins.append(spell["behaviors"]["whirl"])
+        self.assertGreater(spins[0], 0)
+        self.assertLess(spins[1], 0)
+
 
 def run_checks():
     return unittest.TextTestRunner(stream=sys.stdout, verbosity=1).run(

@@ -267,11 +267,129 @@ class TroubleMarksTests(unittest.TestCase):
         self.assertEqual([], marked)
 
 
+def _arc(cx, cy, r, a0, a1, rng):
+    """an arc of the ring as a hand draws it, a point about every unit"""
+    n = max(4, int(abs(a1 - a0) * r))
+    return [(cx + r * math.cos(a0 + (a1 - a0) * i / n) + rng.gauss(0, 0.5), cy + r * math.sin(a0 + (a1 - a0) * i / n) + rng.gauss(0, 0.5))
+            for i in range(n + 1)]
+
+
+def _inside(lua, cx, cy, r):
+    """a fire sigil and two columns: a seal of Fire, column"""
+    t = fixtures.templates(lua)
+    strokes = fixtures.place(fixtures.hand(t[("sigil", "fire")]), cx, cy, r * 0.45)
+    for deg in (0, 180):
+        a = math.radians(deg)
+        strokes += fixtures.place(fixtures.hand(t[("sign", "column")]), cx + 0.7 * r * math.cos(a), cy + 0.7 * r * math.sin(a), r * 0.23,
+                                  a - math.pi / 2)
+    return strokes
+
+
+class RingInPiecesTests(unittest.TestCase):
+    """A ring drawn in many pieces - redrawn bit by bit, a lopsided part erased and drawn again in short arcs - is closed
+    when its pieces go all the way round (seal.lua assemble_ring); a ring left open stays open, and tells where its gap is."""
+    @classmethod
+    def setUpClass(cls):
+        cls.lua = fixtures.load_mod()
+        cls.closed = cls.lua.eval("seal_ring_closed")
+
+    def test_a_ring_in_many_pieces_is_closed(self):
+        rng = random.Random(31)
+        for pieces in (5, 6, 8, 20, 24, 32):
+            for overlap in (0.06, -0.03):  # the ends drawn over each other, or a little short of each other
+                random.seed(pieces)
+                a0 = rng.uniform(0, 2 * math.pi)
+                ring = [_arc(90, 90, 68, a0 + 2 * math.pi * j / pieces - overlap, a0 + 2 * math.pi * (j + 1) / pieces + overlap, rng)
+                        for j in range(pieces)]
+                strokes = ring + _inside(self.lua, 90, 90, 68)
+                self.assertTrue(self.closed(fixtures.lua_strokes(self.lua, strokes)), (pieces, overlap))
+                self.assertEqual("fire:column", fixtures.run(self.lua, strokes)[0], (pieces, overlap))
+
+    def test_a_gap_patched_in_short_arcs_closes_the_ring(self):
+        rng = random.Random(32)
+        for patches in (3, 4, 8, 12):
+            random.seed(patches)
+            a0 = rng.uniform(0, 2 * math.pi)
+            strokes = [_arc(90, 90, 68, a0 + 1.2, a0 + 2 * math.pi, rng)]
+            strokes += [_arc(90, 90, 68 * rng.uniform(0.97, 1.04), a0 + 1.2 * j / patches - 0.05, a0 + 1.2 * (j + 1) / patches + 0.05, rng)
+                        for j in range(patches)]
+            strokes += _inside(self.lua, 90, 90, 68)
+            self.assertTrue(self.closed(fixtures.lua_strokes(self.lua, strokes)), patches)
+            self.assertEqual("fire:column", fixtures.run(self.lua, strokes)[0], patches)
+
+    def test_a_ring_left_open_stays_open_and_tells_where_its_gap_is(self):
+        rng = random.Random(33)
+        random.seed(33)
+        gap = math.radians(40)
+        for pieces in (1, 5, 24, 32):
+            span = (2 * math.pi - gap) / pieces
+            # the gap at the top: from -90 - 20 to -90 + 20 degrees
+            a0 = -math.pi / 2 + gap / 2
+            ring = [_arc(90, 90, 68, a0 + span * j - 0.03, a0 + span * (j + 1) + 0.03, rng) for j in range(pieces)]
+            strokes = ring + _inside(self.lua, 90, 90, 68)
+            self.assertFalse(self.closed(fixtures.lua_strokes(self.lua, strokes)), pieces)
+            spell, err, partial = self.lua.eval("read_spell")(fixtures.lua_strokes(self.lua, strokes))
+            self.assertIsNone(spell)
+            self.assertEqual("The ring is not closed", err)
+            self.assertLess(abs(partial["gap_at"] + math.pi / 2), 0.2, pieces)
+            self.assertGreater(len(list(partial["trouble"].values())), 0)
+
+    def test_a_ring_of_short_pieces_needs_no_big_stroke_inside(self):
+        rng = random.Random(36)
+        for pieces in (20, 32):
+            ring = [_arc(90, 90, 68, math.tau * j / pieces - 0.03, math.tau * (j + 1) / pieces + 0.03, rng)
+                    for j in range(pieces)]
+            self.assertEqual("shockwave:burst", fixtures.run(self.lua, ring)[0], pieces)
+
+    def test_a_signs_base_cannot_close_the_rings_gap(self):
+        rng = random.Random(37)
+        gap = 0.7
+        a0, span = -math.pi / 2 + gap / 2, (math.tau - gap) / 24
+        ring = [_arc(90, 90, 68, a0 + span * j - 0.03, a0 + span * (j + 1) + 0.03, rng) for j in range(24)]
+        # The column's base lies along the missing arc, but belongs to its stem inside the ring.
+        base = fixtures.densify([(68, 24), (112, 24)])
+        stem = fixtures.densify([(90, 24), (90, 48)])
+        strokes = ring + [base, stem]
+        self.assertFalse(self.closed(fixtures.lua_strokes(self.lua, strokes)))
+        self.assertEqual("The ring is not closed", fixtures.run(self.lua, strokes)[0])
+
+
+class TrySealTests(unittest.TestCase):
+    """Players asked for "Try seal" at any time: a drawing the book doesn't read by itself - a ring it doesn't see closed -
+    can be tried, and the book tells why it fails: an open ring and where its gap is, the ring marked."""
+    def test_try_seal_reads_any_drawing_and_tells_where_the_gap_is(self):
+        lua = fixtures.load_mod()
+        G = lua.globals()
+        fixtures.open_book(G)
+        rng = random.Random(34)
+        random.seed(34)
+        a0 = -math.pi / 2 + 0.5
+        strokes = [_arc(90, 90, 68, a0, a0 + 2 * math.pi - 1.0, rng)] + _inside(lua, 90, 90, 68)
+        fixtures.draw(G, strokes)
+        self.assertEqual(0, int(G.globals["witch_notebook.debug_next"] or 0))  # an open ring: not read by itself
+        self.assertIsNotNone(G.notebook_button_rects[900098])
+        fixtures.press_button(G, 900098)
+        self.assertEqual(1, int(G.globals["witch_notebook.debug_next"] or 0))
+        self.assertEqual("The ring is not closed - its gap is at the top", G.notebook_result())
+        self.assertEqual(0, fixtures.seal_count(G))
+
+    def test_a_ring_redrawn_in_pieces_awakens_the_seal(self):
+        lua = fixtures.load_mod()
+        G = lua.globals()
+        fixtures.open_book(G)
+        rng = random.Random(35)
+        random.seed(35)
+        ring = [_arc(90, 90, 68, 2 * math.pi * j / 6 - 0.05, 2 * math.pi * (j + 1) / 6 + 0.05, rng) for j in range(6)]
+        fixtures.draw(G, _inside(lua, 90, 90, 68) + ring)  # the ring last, a piece at a time
+        self.assertEqual(1, fixtures.seal_count(G))
+        self.assertTrue((G.globals["witch_notebook.seal_1_spell"] or "").startswith("element=fire;form=column;"))
+
+
 def run_checks():
     return unittest.TextTestRunner(stream=sys.stdout, verbosity=1).run(
         unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(cls)
                            for cls in (FlickerShapeTests, ModifierAcceptanceTests, WaterIsNotWindTests, TwinSignsTests,
-                                       TroubleMarksTests))
+                                       TroubleMarksTests, RingInPiecesTests, TrySealTests))
     ).wasSuccessful()
 
 

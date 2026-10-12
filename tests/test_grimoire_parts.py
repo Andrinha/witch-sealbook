@@ -58,13 +58,14 @@ class GrimoireParts(unittest.TestCase):
 
     def test_twins_round_the_ring_are_named_alike(self):
         # Glowstone Path: the two waves at its top mirror each other - the right one, torn in its strokes, is joined up
-        # and named like the left one; its own glyphs - a bar with an arc at each side, three strokes down each
-        # diagonal - are whole, one mark each
+        # and named like the left one; the three lines down two diagonals are Detection (the wiki's one seal that uses
+        # it); its own glyphs - a bar with an arc at each side - are whole, one mark each
         parts = self.lua.eval("GRIMOIRE_PARTS").glowstone_path.split(";")
         kinds = [":".join(p.split(":")[:2]) for p in parts]
         self.assertEqual(2, kinds.count("sign:stability"))
+        self.assertEqual(2, kinds.count("sign:detection"))
         marks = [p.split(":")[3].split(",") for p in parts if p.startswith("mark")]
-        self.assertEqual([3, 3, 3, 3], [len(ids) for ids in marks])
+        self.assertEqual([3, 3], [len(ids) for ids in marks])
 
 
 class GrimoirePageUnderTheMouse(unittest.TestCase):

@@ -123,8 +123,6 @@ OWN_SIGNS = {
     # Expansion: a corner of the wiki's Enlarge sign - two nested corners pointing outwards (grow);
     # pointing to the center they shrink
     "expansion": [line((0.1, 0.2), (0.5, 0.6), (0.9, 0.2)), line((0.1, 0.5), (0.5, 0.9), (0.9, 0.5))],
-    # Stability and Level Planes: two parallel waves
-    "stability": [wave(0.3), wave(0.7)],
 }
 
 
@@ -158,6 +156,14 @@ VARIANTS = {
     # Regions drawn as a round arch, not a sharp chevron: hands round its top (Flame Shot's rows of them) and the arch,
     # nearer Projection's box than the chevron, read as Projection
     "regions": [[[(0.5 - 0.36 * math.cos(math.pi * i / 24), 0.85 - 0.5 * math.sin(math.pi * i / 24) ** 1.2) for i in range(25)]]],
+    # Gathering as the Vapor Bubble seal draws it: a big arrowhead, a small fork at the stem's end. (The stem through two
+    # arrowheads the book's legend drew until 2026-10-12 is no variant: it takes the wiki's Pulling, an arrow on a triangle)
+    "gathering": [[line((0.02, 0.64), (0.5, 0.0), (0.98, 0.64)), line((0.5, 0.0), (0.5, 0.68)), line((0.18, 1.0), (0.5, 0.68), (0.82, 1.0))]],
+    # Binding's arcs drawn round, Immobility's circle whole
+    "binding": [[shapes.arc(0.5, 0.85, 0.45, 180, 360), shapes.arc(0.5, 0.85, 0.2, 195, 345)]],
+    "immobility": [[shapes.circle(0.5, 0.42, 0.28), line((0.5, 0.06), (0.5, 0.88)), line((0.18, 0.88), (0.82, 0.88))]],
+    "projection": [[line((0.1, 0.85), (0.1, 0.25), (0.9, 0.25), (0.9, 0.85))]],
+    "stability": [[wave(0.3), wave(0.7)]],
 }
 
 # ... and sigils: fire with long horns standing apart from the sides of the triangle

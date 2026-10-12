@@ -1415,7 +1415,8 @@ def test_click_outside():
     open_book(G, to_blank=False)
     click(G, RIGHT_X + 60, PAGE_Y + 40)  # the page of signs
     hints_open = G.controls_enabled is False
-    held = click(G, LEFT_X - 40, PAGE_Y + 90)  # left of the book
+    panel_left = min(r[1] for r in G.notebook_button_rects.values())
+    held = click(G, panel_left - 10, PAGE_Y + 90)  # left of the panel, including its widest button
     print(f"  click on the hints keeps it open: {hints_open}; click outside: controls while held {held}, after release {G.controls_enabled}")
     return hints_open and held is False and G.controls_enabled is True
 
@@ -2216,9 +2217,12 @@ def test_book_sources():
 def main():
     from test_recognizer import run_checks
     from test_seal_structure import run_checks as run_structure_checks
+    from test_player_signs import run_checks as run_player_sign_checks
 
     ok_recognizer = run_checks()
     ok_structure = run_structure_checks()
+    print("signs drawn as players draw them:")
+    ok_structure &= run_player_sign_checks()
     lua = load_mod()
     names = lua.eval("names")
     ok_icons = all(names[f"mods/witch_notebook/files/gfx/{f}.png"] for f in ("book/page_page", "book/page_plain", "book/page_sheet", "book/cover",

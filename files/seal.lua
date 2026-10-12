@@ -59,6 +59,7 @@ local MIN_GROUP_MARGIN = 4   -- ... but at least this many gui units
 local TOUCH = 3              -- strokes closer than this (gui units) touch
 local SIGIL_MIN_SIZE = 0.2   -- a few short marks cannot stand for a full sigil after normalization
 local INVERTED_MARGIN = 0.08 -- how much better an inverted reading of a sign must score
+local UPSIDE_DOWN = 0.03     -- ... and one of a sign that can't be inverted, drawn upside down
 local POSE_STEP = math.rad( 15 ) -- signs are matched in every pose around the circle, this far apart
 -- rings in rings (the wiki's Vapor Bubble, Water Bolt, Serpent's Bed of Sand) and seals linked by a line
 local LAYER_CENTER = 0.18    -- a ring whose center is this close (share of the radius) is concentric: a layer
@@ -130,21 +131,130 @@ local function ring_info( strokes, min_size )
 		end
 	end
 	if covered / RING_BINS < MIN_OPEN_TURN then return nil end
-	local widest, run = 0, 0
+	local widest, run, last = 0, 0, 0
 	for i = 0, 2 * RING_BINS - 1 do -- twice around, so a gap across bin 0 counts whole
-		if bins[i % RING_BINS] then run = 0 else run = run + 1; widest = math.max( widest, run ) end
+		if bins[i % RING_BINS] then run = 0 else run = run + 1; if run > widest then widest, last = run, i end end
 	end
 	local gap = math.min( widest, RING_BINS ) / RING_BINS * 2 * math.pi
-	return { x = b.cx, y = b.cy, r = mean, roundness = std / mean, closed = gap <= MAX_GAP_ANGLE, gap = gap }
+	-- where the widest gap is: the angle of its middle (page coordinates, y down)
+	local gap_at = ( last - ( widest - 1 ) / 2 + 0.5 ) / RING_BINS * 2 * math.pi - math.pi
+	return { x = b.cx, y = b.cy, r = mean, roundness = std / mean, closed = gap <= MAX_GAP_ANGLE, gap = gap, gap_at = gap_at }
 end
 
--- The ring: the biggest round stroke, or up to four big arcs that together make a round ring
+local function strokes_touch( a, b, d )
+	d = d or TOUCH
+	for _, p in ipairs( a ) do
+		for _, q in ipairs( b ) do
+			if ( p.x - q.x ) ^ 2 + ( p.y - q.y ) ^ 2 <= d * d then return true end
+		end
+	end
+	return false
+end
+
+-- The circle through the strokes' points, least squares (Kasa): { x, y, r }, or nil
+local function fit_circle( strokes )
+	local n, mx, my = 0, 0, 0
+	for _, stroke in ipairs( strokes ) do
+		for _, p in ipairs( stroke ) do n, mx, my = n + 1, mx + p.x, my + p.y end
+	end
+	if n < 3 then return nil end
+	mx, my = mx / n, my / n
+	local suu, svv, suv, suz, svz, sz = 0, 0, 0, 0, 0, 0
+	for _, stroke in ipairs( strokes ) do
+		for _, p in ipairs( stroke ) do
+			local u, v = p.x - mx, p.y - my
+			local z = u * u + v * v
+			suu, svv, suv = suu + u * u, svv + v * v, suv + u * v
+			suz, svz, sz = suz + u * z, svz + v * z, sz + z
+		end
+	end
+	-- the circle u^2 + v^2 + D u + E v + F = 0 around the points' mean: sum(u) = sum(v) = 0
+	local det = suu * svv - suv * suv
+	if math.abs( det ) < 1e-9 then return nil end
+	local d = ( -suz * svv + svz * suv ) / det
+	local e = ( -svz * suu + suz * suv ) / det
+	local f = -sz / n
+	local r2 = ( d * d + e * e ) / 4 - f
+	if r2 <= 0 then return nil end
+	return { x = mx - d / 2, y = my - e / 2, r = math.sqrt( r2 ) }
+end
+
+-- A ring drawn in many pieces - redrawn bit by bit, or parts of it erased and drawn again: more than four arcs, some of
+-- them short. The pieces whose every point lies on one circle's line are the ring, if they go all the way round. The
+-- circle is guessed from 'seeds' (lists of stroke indices: the biggest open ring, the big arcs together, the two biggest
+-- ones) and fitted again to the pieces it gathers. Returns ring_info's ring and its parts; or nil and the open ring that
+-- went farthest round, and its parts.
+local ASSEMBLE_OFF = 0.1  -- a piece lies this close to the circle's line, all of it (share of the radius) ...
+local ASSEMBLE_MIN = 0.25 -- ... and is this big at least (share of the radius): a sign's base by the line is no piece
+-- the strokes (indices) on the line of the circle 'c': all their points close to it, touching nothing that isn't (a sign's
+-- base on the line touches its stem)
+local function on_circle( strokes, c, sizes, min_size )
+	local on, parts = {}, {}
+	for i, stroke in ipairs( strokes ) do
+		if #stroke >= 2 and sizes[i] >= ( min_size or ASSEMBLE_MIN * c.r ) then
+			on[i] = true
+			for _, p in ipairs( stroke ) do
+				if math.abs( math.sqrt( ( p.x - c.x ) ^ 2 + ( p.y - c.y ) ^ 2 ) - c.r ) > ASSEMBLE_OFF * c.r then on[i] = nil; break end
+			end
+		end
+	end
+	for i in pairs( on ) do
+		local b = bbox( { strokes[i] } )
+		for j, other in ipairs( strokes ) do
+			if on[j] == nil and #other > 0 then
+				local o = bbox( { other } )
+				if o.minx <= b.maxx + TOUCH and o.maxx >= b.minx - TOUCH and o.miny <= b.maxy + TOUCH and o.maxy >= b.miny - TOUCH
+					and strokes_touch( strokes[i], other ) then
+					parts[i] = false
+					break
+				end
+			end
+		end
+	end
+	local out = {}
+	for i in ipairs( strokes ) do
+		if on[i] and parts[i] ~= false then out[#out + 1] = i end
+	end
+	return out
+end
+
+local function stroke_sizes( strokes )
+	local sizes = {}
+	for i, stroke in ipairs( strokes ) do sizes[i] = bbox( { stroke } ).size end
+	return sizes
+end
+
+local function assemble_ring( strokes, seeds )
+	local sizes = stroke_sizes( strokes )
+	local open, open_parts
+	for _, seed in ipairs( seeds ) do
+		local set = {}
+		for k, i in ipairs( seed.parts ) do set[k] = strokes[i] end
+		local c = seed.circle or fit_circle( set )
+		for _ = 1, 3 do
+			if not c or c.r < MIN_RING_SIZE / 2 then break end
+			-- repairs can be shorter than a sign's base; touching a stem still keeps that base out of the ring
+			local parts = on_circle( strokes, c, sizes, TOUCH )
+			if #parts == 0 then break end
+			local pset = {}
+			for k, i in ipairs( parts ) do pset[k] = strokes[i] end
+			local info = ring_info( pset )
+			if info and info.closed then return info, parts end
+			if info and ( not open or info.gap < open.gap ) then open, open_parts = info, parts end
+			c = fit_circle( pset )
+		end
+	end
+	return nil, nil, open, open_parts
+end
+
+-- The ring: the biggest round stroke, or up to four big arcs that together make a round ring, or many pieces that do
 local function find_ring( strokes )
 	local arcs = {}
 	for i, stroke in ipairs( strokes ) do
 		if bbox( { stroke } ).size >= MIN_ARC_SIZE then arcs[#arcs + 1] = i end
 	end
 	local best, best_parts, open_ring, open_r, open_best, open_parts
+	local opens = {}
 	local function try( parts )
 		local set = {}
 		for k, i in ipairs( parts ) do set[k] = strokes[i] end
@@ -162,6 +272,7 @@ local function find_ring( strokes )
 			open_ring = true
 			open_r = math.max( open_r or 0, info.r )
 			if not open_best or info.r > open_best.r then open_best, open_parts = info, parts end
+			opens[#opens + 1] = { r = info.r, parts = parts }
 		end
 	end
 	for a = 1, #arcs do
@@ -204,9 +315,49 @@ local function find_ring( strokes )
 			if info and info.closed then best, best_parts = info, parts end
 		end
 	end
-	if not best then return nil, open_ring end
+	-- no ring of up to four arcs, or one inside a bigger ring left open: a ring of many pieces?
+	if #strokes > 0 and ( not best or ( open_best and open_best.r > best.r * OUTER_RING ) ) then
+		local seeds = {}
+		if open_parts then seeds[#seeds + 1] = { parts = open_parts } end
+		-- all the big arcs: the ring stands around everything else, its box is theirs
+		local set = {}
+		for k, i in ipairs( arcs ) do set[k] = strokes[i] end
+		if #arcs > 0 then
+			local b = bbox( set )
+			seeds[#seeds + 1] = { parts = arcs, circle = { x = b.cx, y = b.cy, r = b.size / 2 } }
+		end
+		local by_size = {}
+		for k, i in ipairs( arcs ) do by_size[k] = i end
+		table.sort( by_size, function( a, c ) return bbox( { strokes[a] } ).size > bbox( { strokes[c] } ).size end )
+		if #by_size >= 2 then seeds[#seeds + 1] = { parts = { by_size[1], by_size[2] } } end
+		-- a ring made entirely of short pieces has no big arc to seed its circle from
+		local b = bbox( strokes )
+		seeds[#seeds + 1] = { parts = {}, circle = { x = b.cx, y = b.cy, r = b.size / 2 } }
+		local info, parts, open, open_list = assemble_ring( strokes, seeds )
+		-- not closed: the open ring that goes farthest round is the one to tell about
+		if not best and open and ( not open_best or open.gap < open_best.gap ) then
+			open_ring, open_best, open_parts = true, open, open_list
+		end
+		if info and ( not best or info.r > best.r * OUTER_RING ) then
+			best, best_parts = info, parts
+			-- the open rings found were its own pieces; one with a stroke of its own is a ring around it still open
+			local mine = {}
+			for _, i in ipairs( parts ) do mine[i] = true end
+			open_r = nil
+			for _, o in ipairs( opens ) do
+				for _, i in ipairs( o.parts ) do
+					if not mine[i] then open_r = math.max( open_r or 0, o.r ); break end
+				end
+			end
+		end
+	end
+	-- no closed ring: whether there is an open one, the biggest and its strokes
+	if not best then return nil, open_ring, open_best, open_parts end
 	local parts = {}
 	for _, i in ipairs( best_parts ) do parts[i] = true end
+	-- every piece on the ring's line is the ring's, also one it closed without (a gap patched in pieces, one of them a
+	-- little out of the line - it would be a mark outside the ring)
+	for _, i in ipairs( on_circle( strokes, best, stroke_sizes( strokes ) ) ) do parts[i] = true end
 	return best, parts, open_r
 end
 
@@ -328,16 +479,6 @@ local function group_strokes( strokes, margin, share )
 	return groups
 end
 
-local function strokes_touch( a, b, d )
-	d = d or TOUCH
-	for _, p in ipairs( a ) do
-		for _, q in ipairs( b ) do
-			if ( p.x - q.x ) ^ 2 + ( p.y - q.y ) ^ 2 <= d * d then return true end
-		end
-	end
-	return false
-end
-
 -- Splits strokes into the parts that really touch (points closer than TOUCH): a symbol drawn close to
 -- another is grouped with it, touching parts show where one ends
 local function touching_parts( strokes )
@@ -382,11 +523,11 @@ end
 local sigil_set, non_flicker_sigil_set, sign_set, frame_set, glaive_set
 local SIGN_STROKES = { dispersion = { min = 2 }, levitation = { min = 2 }, pull = { min = 2 },
 	pierce = { min = 2 }, crosshair = { min = 3 }, expansion = { min = 2 }, stability = { min = 2 },
-	sights = { min = 2 }, strengthen = { min = 2 }, entwine = { min = 2 }, detection = { min = 3 }, partition = { min = 2 },
+	sights = { min = 3 }, strengthen = { min = 2 }, entwine = { min = 3 }, detection = { min = 3 }, partition = { min = 2 },
 	refuse = { min = 1 }, solidify = { min = 2 }, binding = { min = 2 }, immobility = { min = 2 }, pointing = { min = 2 },
-	mimicry = { min = 2 }, collection = { min = 2 }, gathering = { min = 2 }, orb = { min = 2 }, link = { min = 2 },
+	mimicry = { min = 3 }, gathering = { min = 3 }, orb = { min = 2 }, link = { min = 2 },
 	stillness = { min = 3 }, cooling = { min = 3 }, coil = { min = 2 }, aeriform = { min = 3 },
-	regions = { max = 2 }, diamond = { max = 2 }, purify = { max = 2 }, windsign = { max = 2 }, projection = { max = 3 },
+	regions = { max = 2 }, diamond = { max = 4 }, purify = { max = 2 }, windsign = { max = 2 }, projection = { max = 3 },
 	reflection = { max = 4 }, envelop = { max = 3 } }
 -- the extra ways a sign is drawn (templates.lua) need all their strokes: levitation drawn as an arrow
 -- in two strokes would take in slanted columns, a short-based column in one stroke - any bare line
@@ -465,8 +606,13 @@ local function template_sets()
 		for _, tpl in ipairs( sign_set ) do
 			local def = DICTIONARY_SIGNS[tpl.key]
 			tpl.inverted, tpl.turn = sign_pose( tpl.key, tpl.tilt )
-			if def.invertible == false then tpl.inverted = false end
 			tpl.penalty = tpl.inverted and ( ( def.symmetry or 1 ) >= 3 and INVERTED_MARGIN or 0.02 ) or 0
+			-- a sign that means the same either way round is still drawn facing the middle: upside down it reads a little
+			-- worse (Purification's curl at the top is the Spiraling Wind's loop)
+			if def.invertible == false then
+				if tpl.inverted then tpl.penalty = UPSIDE_DOWN end
+				tpl.inverted = false
+			end
 		end
 		entries = {}
 		for key, shape in pairs( TEMPLATES_FRAMES or {} ) do
@@ -1135,6 +1281,8 @@ local LOCKED_READING = 0.92
 local MAX_JOINED = 3 -- a group is tried with up to this many neighbours at once
 local MAX_NEIGHBOURS = 6 -- ... among its nearest neighbours
 local JOIN_BUDGET = 100 -- readings of joined groups one drawing may try: a drawing of very many strokes stops joining there
+local PART_OF_BIGGER = 0.6 -- a group this much smaller than a neighbour may be a part of it lying apart ...
+local PART_REACH = 0.45    -- ... as far as this share of the neighbour's size
 local function segment( strokes, ring )
 	local groups = group_strokes( strokes, FINE_MARGIN, 0 )
 	local function points_of( g )
@@ -1158,7 +1306,9 @@ local function segment( strokes, ring )
 		prepare( g )
 	end
 	local function near( a, b )
-		local m = math.max( 6, GROUP_MARGIN * math.min( a.box.size, b.box.size ) )
+		-- a small part beside a bigger one may lie farther (Binding's arcs, Detection's lines, Cooling's dots)
+		local small, big = math.min( a.box.size, b.box.size ), math.max( a.box.size, b.box.size )
+		local m = math.max( 6, GROUP_MARGIN * small, small <= PART_OF_BIGGER * big and PART_REACH * big or 0 )
 		if a.box.minx - m > b.box.maxx or b.box.minx - m > a.box.maxx or a.box.miny - m > b.box.maxy or b.box.miny - m > a.box.maxy then
 			return false
 		end
@@ -1192,9 +1342,11 @@ local function segment( strokes, ring )
 	end
 	while true do
 		local best
+		-- each group's nearest neighbours
+		local arounds = {}
 		for i, a in ipairs( groups ) do
+			local around = {}
 			if a.value < LOCKED_READING then
-				local around = {}
 				for j, b in ipairs( groups ) do
 					if j ~= i and b.value < LOCKED_READING and near( a, b ) then around[#around + 1] = b end
 				end
@@ -1204,47 +1356,56 @@ local function segment( strokes, ring )
 					table.sort( around, function( p, q ) return d2( p ) < d2( q ) end )
 					for k = #around, MAX_NEIGHBOURS + 1, -1 do around[k] = nil end
 				end
-				-- a with every combination of up to MAX_JOINED of its neighbours
-				local function try( start, chosen )
-					if #chosen > 0 then
-						-- what the groups are worth apart: their readings weighed by how much of the drawing each explains
-						-- (a part of a sigil read as some other symbol explains little of it; unread counts as nothing)
-						local list = { a }
-						local worth, ink = math.max( a.value, 0 ) * a.ink, a.ink
-						for _, b in ipairs( chosen ) do
-							list[#list + 1] = b
-							worth, ink = worth + math.max( b.value, 0 ) * b.ink, ink + b.ink
-						end
-						worth = worth / ink
-						local r = joined_reading( list )
-						-- sigils side by side don't make one sign together (two fire sigils aren't Solidification)
-						if r and r.symbols[1].kind == "sign" then
-							local sigils = 0
-							for _, g in ipairs( list ) do
-								if g.symbols and #g.symbols == 1 and g.symbols[1].kind == "sigil" and g.value >= 0.55 then sigils = sigils + 1 end
-							end
-							if sigils >= 2 then r = nil end
-						end
-						if r then
-							local gain = r.value - worth
-							if compact_sign( r.symbols[1] ) then
-								local fragments = true
-								for _, g in ipairs( list ) do
-									if not g.symbols or #g.symbols ~= 1 or g.symbols[1].kind ~= "sign" then fragments = false; break end
-								end
-								if fragments then gain = gain + COMPOUND_SIGN_MARGIN * ( #list - 1 ) end
-							end
-							if gain > 0.02 and ( not best or gain > best.gain ) then best = { list = list, group = r, gain = gain } end
-						end
+			end
+			arounds[i] = around
+		end
+		-- a group with some of its neighbours: what they are worth apart, and what together
+		local function weigh( a, chosen )
+			-- what the groups are worth apart: their readings weighed by how much of the drawing each explains
+			-- (a part of a sigil read as some other symbol explains little of it; unread counts as nothing)
+			local list = { a }
+			local worth, ink = math.max( a.value, 0 ) * a.ink, a.ink
+			for _, b in ipairs( chosen ) do
+				list[#list + 1] = b
+				worth, ink = worth + math.max( b.value, 0 ) * b.ink, ink + b.ink
+			end
+			worth = worth / ink
+			local r = joined_reading( list )
+			-- sigils side by side don't make one sign together (two fire sigils aren't Solidification)
+			if r and r.symbols[1].kind == "sign" then
+				local sigils = 0
+				for _, g in ipairs( list ) do
+					if g.symbols and #g.symbols == 1 and g.symbols[1].kind == "sigil" and g.value >= 0.55 then sigils = sigils + 1 end
+				end
+				if sigils >= 2 then r = nil end
+			end
+			if r then
+				local gain = r.value - worth
+				if compact_sign( r.symbols[1] ) then
+					local fragments = true
+					for _, g in ipairs( list ) do
+						if not g.symbols or #g.symbols ~= 1 or g.symbols[1].kind ~= "sign" then fragments = false; break end
 					end
-					if #chosen >= MAX_JOINED or tried > JOIN_BUDGET then return end
+					if fragments then gain = gain + COMPOUND_SIGN_MARGIN * ( #list - 1 ) end
+				end
+				if gain > 0.02 and ( not best or gain > best.gain ) then best = { list = list, group = r, gain = gain } end
+			end
+		end
+		-- every group with one of its neighbours first, then with two, then three: a drawing of too many strokes to try
+		-- them all (JOIN_BUDGET) has tried the likeliest joins everywhere
+		for n = 1, MAX_JOINED do
+			for i, a in ipairs( groups ) do
+				local around = arounds[i]
+				local function pick( start, chosen )
+					if #chosen == n then return weigh( a, chosen ) end
 					for k = start, #around do
+						if tried > JOIN_BUDGET then return end
 						chosen[#chosen + 1] = around[k]
-						try( k + 1, chosen )
+						pick( k + 1, chosen )
 						chosen[#chosen] = nil
 					end
 				end
-				if #around > 0 then try( 1, {} ) end
+				if #around >= n then pick( 1, {} ) end
 			end
 		end
 		if not best then break end
@@ -1417,9 +1578,13 @@ local function decorative_groups( strokes, ring )
 end
 
 local function parse_with( strokes, noise )
-	local ring, ring_parts = find_ring( strokes )
+	local ring, ring_parts, open, open_parts = find_ring( strokes )
 	if not ring then
-		return nil, ring_parts and "The ring is not closed" or "No ring - the seal does nothing"
+		if not ring_parts then return nil, "No ring - the seal does nothing" end
+		-- the open ring is what the book marks, and where its gap is ('gap_at': its angle)
+		local partial = { trouble = {}, gap_at = open and open.gap_at }
+		for _, i in ipairs( open_parts or {} ) do partial.trouble[#partial.trouble + 1] = strokes[i] end
+		return nil, "The ring is not closed", partial
 	end
 	local seal = { ring = { x = ring.x, y = ring.y, r = ring.r, roundness = ring.roundness }, symbols = {}, layers = {}, frames = {},
 		subs = {}, links = {}, glaives = 0, satellites = 0, strokes = strokes }
