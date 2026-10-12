@@ -95,6 +95,86 @@ class FlickerShapeTests(unittest.TestCase):
             self.assertFalse(G.globals[f"witch_notebook.tome.seal_{i}_spell"])
 
 
+class ConcealmentIsNotCrystalTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.lua = load_reader()
+        examples = json.loads((Path(fixtures.MOD) / "tests/data/player_seals.json").read_text(encoding="utf-8"))
+        cls.examples = {e["name"]: [[tuple(map(float, p.split(","))) for p in st.split()] for st in e["strokes"]]
+                        for e in examples if e["name"].startswith("concealment ")}
+
+    def assert_sigil(self, strokes, key):
+        result = self.lua.globals().parse_seal(fixtures.lua_strokes(self.lua, strokes))
+        tree = result[0] if isinstance(result, tuple) else result
+        self.assertIsNotNone(tree, result)
+        self.assertEqual([("sigil", key)], [(s["kind"], s["key"]) for s in tree["symbols"].values()])
+        compiled = self.lua.globals().compile_spell(tree)
+        spell = compiled[0] if isinstance(compiled, tuple) else compiled
+        self.assertIsNotNone(spell, compiled)
+        if key == "concealment":
+            self.assertEqual("smoke", spell["element"])
+            self.assertEqual("shadow", spell["manifest"])
+        else:
+            self.assertEqual("crystal", spell["element"])
+            self.assertIsNone(spell["manifest"])
+
+    def test_recorded_asterisks_cast_concealment(self):
+        self.assertEqual(3, len(self.examples))
+        for name, strokes in self.examples.items():
+            with self.subTest(drawing=name):
+                self.assert_sigil(strokes, "concealment")
+
+    def test_recorded_asterisks_allow_rounding_and_stroke_order_changes(self):
+        for name, strokes in self.examples.items():
+            for seed in range(8):
+                rng = random.Random(seed)
+                changed = [[(x + rng.uniform(-0.049, 0.049), y + rng.uniform(-0.049, 0.049)) for x, y in st]
+                           for st in strokes]
+                changed = [st[::-1] if rng.choice((False, True)) else st for st in changed]
+                rng.shuffle(changed)
+                with self.subTest(drawing=name, seed=seed):
+                    self.assert_sigil(changed, "concealment")
+
+    def test_asterisk_and_crystal_lattice_stay_distinct(self):
+        # Independent drawings: Conceal's four lines meet in one center; Crystalize has parallel rows.
+        asterisk = [[(90, 60), (90, 120)], [(60, 90), (120, 90)],
+                    [(68, 68), (112, 112)], [(112, 68), (68, 112)]]
+        lattice = [[(60 + offset, 60 - offset), (120 + offset, 120 - offset)] for offset in (-12, 0, 12)]
+        lattice += [[(60 + offset, 120 + offset), (120 + offset, 60 + offset)] for offset in (-12, 0, 12)]
+        rng = random.Random(124)
+        for key, shape in (("concealment", asterisk), ("crystal", lattice)):
+            for size in (24, 45, 75):
+                for angle in (-12, 0, 12, 90):
+                    xs = [x for st in shape for x, y in st]
+                    ys = [y for st in shape for x, y in st]
+                    scale = size / max(max(xs) - min(xs), max(ys) - min(ys))
+                    a = math.radians(angle)
+                    strokes = [fixtures.densify([(90 + scale * ((x - 90) * math.cos(a) - (y - 90) * math.sin(a)),
+                                                 90 + scale * ((x - 90) * math.sin(a) + (y - 90) * math.cos(a)))
+                                                for x, y in st]) for st in shape]
+                    strokes = [[(x + rng.uniform(-0.2, 0.2), y + rng.uniform(-0.2, 0.2)) for x, y in st] for st in strokes]
+                    rng.shuffle(strokes)
+                    with self.subTest(key=key, size=size, angle=angle):
+                        self.assert_sigil([fixtures.clean_ring()] + strokes, key)
+
+    def test_eyes_variant_still_casts_concealment(self):
+        shape = fixtures.templates(self.lua)[("sigil", "concealment")]
+        strokes = [[(70 + x * 40, 70 + y * 40) for x, y in st] for st in shape]
+        self.assert_sigil([fixtures.clean_ring()] + strokes, "concealment")
+
+    def test_recorded_asterisks_awaken_as_shadow_in_the_notebook(self):
+        for name, strokes in self.examples.items():
+            with self.subTest(drawing=name):
+                lua = fixtures.load_mod()
+                G = lua.globals()
+                fixtures.open_book(G)
+                fixtures.draw_on_blank(G, strokes)
+                self.assertEqual(1, fixtures.seal_count(G))
+                spell = G.globals["witch_notebook.seal_1_spell"] or ""
+                self.assertTrue(spell.startswith("element=smoke;form=burst;"), spell)
+                self.assertIn(";manifest=shadow;", spell)
+
+
 class ModifierAcceptanceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -388,7 +468,7 @@ class TrySealTests(unittest.TestCase):
 def run_checks():
     return unittest.TextTestRunner(stream=sys.stdout, verbosity=1).run(
         unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(cls)
-                           for cls in (FlickerShapeTests, ModifierAcceptanceTests, WaterIsNotWindTests, TwinSignsTests,
+                           for cls in (FlickerShapeTests, ConcealmentIsNotCrystalTests, ModifierAcceptanceTests, WaterIsNotWindTests, TwinSignsTests,
                                        TroubleMarksTests, RingInPiecesTests, TrySealTests))
     ).wasSuccessful()
 

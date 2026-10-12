@@ -198,7 +198,8 @@ def main():
             forms = forms[1:] + forms[:1]
         lines.append(f"\t{key} = {{ {', '.join(forms)} }},")
     for key, strokes in shapes.SIGILS.items():
-        lines.append(f"\t{key} = {{ {lua_shape(strokes, traced=False)} }},")
+        forms = [lua_shape(strokes, traced=False)] + [lua_shape(v, traced=False) for v in shapes.SIGIL_VARIANTS.get(key, [])]
+        lines.append(f"\t{key} = {{ {', '.join(forms)} }},")
     lines.append("}")
     lines.append("")
     lines.append("TEMPLATES_SIGNS = {")

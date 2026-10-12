@@ -308,6 +308,11 @@ SIGILS = {
 # (import_templates.py PRIMARY_VARIANTS): the one the book's pages and legend show. The wind sigil's S alone,
 # without its rays (Rainflinger, Vapor Bubble)
 SIGIL_VARIANTS = {
+    # Players simplify Conceal's endpoint eyes to short caps or leave them off. Its four crossing lines still
+    # distinguish it from Crystalize's lattice of parallel diagonals; keep the full eyes drawing first.
+    "concealment": [SIGILS["concealment"][:4],
+                    SIGILS["concealment"][:4] + [line((0.42, 0.1), (0.58, 0.1)), line((0.42, 0.9), (0.58, 0.9)),
+                                                line((0.1, 0.42), (0.1, 0.58)), line((0.9, 0.42), (0.9, 0.58))]],
     "wind": [[_s_curve(0.5, 0.5, 0.9, 0.36)]],
     "earth": [[line((0.14, 0.13), (0.86, 0.13)), line((0.5, 0.13), (0.5, 0.8)),
                line((0.343, 0.332), (0.153, 0.528), (0.5, 0.8), (0.846, 0.528), (0.655, 0.332)),
