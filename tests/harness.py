@@ -503,6 +503,8 @@ function ComponentGetValue2( cid, field )
 	local c = W.comps[cid]
 	if not c then err( "ComponentGetValue2 on a missing component: " .. tostring( field ) ); return nil end
 	local v = c.values[field]
+	-- a range an entity file gives as two attributes (area_circle_radius.min, .max): both values, as the game returns them
+	if v == nil and c.values[field .. ".max"] ~= nil then return c.values[field .. ".min"] or 0, c.values[field .. ".max"] end
 	if v == nil then v = DEFAULTS[field] end
 	if v == nil then
 		if field:match( "^mButtonDown" ) or field:match( "^is_" ) then return false end

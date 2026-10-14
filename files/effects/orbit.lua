@@ -23,20 +23,26 @@ local function circle( e, p, age, n, radius, draw, touch )
 	return owner
 end
 
--- Carousel of Lights: orbiting illumination, an interpretation of the redraw.
+-- Carousel of Lights: orbiting illumination, an interpretation of the redraw; round the sigil of another element that
+-- gives light (fire, flickering light, unburning flames), lights of that element
 MODES.carousel = function( e, p, age )
-	local owner = circle( e, p, age, p.count or 6, function( i, age ) return 22 + 6 * math.sin( age * 0.05 + i ) end,
+	local element = DICTIONARY_ELEMENTS[effect_text( p.element )] and p.element or "light"
+	local big = p.big or 1 -- Expansion
+	local owner = circle( e, p, age, p.count or 6, function( i, age ) return ( 22 + 6 * math.sin( age * 0.05 + i ) ) * big end,
 		function( px, py, a, i )
 			local fade = math.min( 1, ( p.frames - age ) / 40 )
-			fx_ring( px, py, 2, effect_color( "light", 0.6, fade * 0.7 ), 12, 0, 0.06 )
-			fx_dot( px, py, effect_color( "light", 1, fade ), 0, 0, 0.08 )
+			fx_ring( px, py, 2, effect_color( element, 0.6, fade * 0.7 ), 12, 0, 0.06 )
+			fx_dot( px, py, effect_color( element, 1, fade ), 0, 0, 0.08 )
 			for k = 1, 5 do
 				fx_dot( px + math.sin( a ) * k, py - math.cos( a ) * k * 0.8,
-					effect_color( "light", 0.3, fade * ( 1 - k / 6 ) * 0.4 ), 0, 0, 0.08 )
+					effect_color( element, 0.3, fade * ( 1 - k / 6 ) * 0.4 ), 0, 0, 0.08 )
 			end
 		end,
 		function() end )
-	if owner and age == 0 then EntityAddComponent2( e, "LightComponent", { radius = 90, r = 255, g = 230, b = 170, fade_out_time = 1 } ) end
+	if owner and age == 0 then
+		local c = element == "light" and { 255, 230, 170 } or DICTIONARY_ELEMENTS[element].color
+		EntityAddComponent2( e, "LightComponent", { radius = math.floor( 90 * big ), r = c[1], g = c[2], b = c[3], fade_out_time = 1 } )
+	end
 end
 
 -- a ring of the element round the caster: it strikes what it touches; water puts out fire on the caster. Its resonances

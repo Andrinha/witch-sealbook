@@ -57,6 +57,14 @@ DICTIONARY_ELEMENTS = {
 	smog      = { name = "Smog",              color = { 120, 110, 100 } },
 	fireworks = { name = "Fireworks",         color = { 255, 170, 90 } },
 }
+-- what Convergence compresses an element into: its wave strikes harder than the loose element's (manifest.lua M.nova; a
+-- field's damage is its look's, DICTIONARY_LOOKS)
+DICTIONARY_CONDENSED = {}
+for _, def in pairs( DICTIONARY_ELEMENTS ) do
+	if def.condensed then DICTIONARY_CONDENSED[def.condensed] = true end
+end
+DICTIONARY_CONDENSED_WAVE = 1.5
+
 -- the element sigils, in the order mixes name them
 DICTIONARY_SIGIL_ORDER = { "fire", "water", "wind", "earth", "light", "crystal", "smoke", "thunder", "flicker", "air", "sand", "phantasm" }
 
@@ -269,7 +277,7 @@ MANIFEST_NAMES = {
 	petrify = "petrification", labyrinth = "closed space", oblivion = "obliviation", heal = "healing",
 	golem = "golem", wolf_curse = "wolf curse", unpolymorph = "undoes transformation",
 	slime = "into slime", blade = "blade", sculpture = "sculpture", spiraling_flame = "spiraling flame",
-	pyreball = "floating bonfire", flame_shot = "flame column", flame_burst = "fire ring and blast", ring_of_fire = "ring of flame",
+	pyreball = "floating bonfire", flame_shot = "long shot", flame_burst = "fire ring and blast", ring_of_fire = "ring of flame",
 }
 
 DICTIONARY_FRAME_ORDER = { "rain", "rainward", "holding", "weave", "dancing", "flower" }
@@ -359,12 +367,14 @@ local MANIFEST_SIGN_GROUPS = {
 	{ "grow,shrink,strong", "blade,flame_burst,ring_of_fire,spiraling_flame" },
 	{ "grow,shrink", "wave" },
 	{ "still,mimic", "forbidden_fire,smoke_copies,whirlwind" },
-	{ "still,pierce", "carousel" },
+	{ "grow,shrink,still,pierce", "carousel" },
 	{ "still,strong", "golem,stone_wall" },
-	{ "strong,mimic", "spikes,vapor" },
+	{ "grow,shrink,strong,mimic", "spikes" },
+	{ "strong,mimic", "vapor" },
 	{ "mimic", "chalice,guidance_fish,slime,wolf_curse" },
-	{ "still", "beacon,beacon_pillar,bloom,book,bubble,capture,chair,cloud,cookpot,disc,disguise,floatglow,glowpath,"
-		.. "lamp,levitate,lift,lockwax,lure,mirror,pegasus,phantasm,portal,portal_small,remote_cloak,ribbon,"
+	{ "grow,shrink,still", "floatglow,lamp" },
+	{ "still", "beacon,beacon_pillar,bloom,book,bubble,capture,chair,cloud,cookpot,disc,disguise,glowpath,"
+		.. "levitate,lift,lockwax,lure,mirror,pegasus,phantasm,portal,portal_small,remote_cloak,ribbon,"
 		.. "sand_cage,sand_cloud,sandcastle,shade,shadow,smoke_cloak,smoke_clone,smoke_fairy,stone_arm,sylph,"
 		.. "tracer,tracking,umbrella,walk_liquid,wand,warmth,xray" },
 }
@@ -389,6 +399,9 @@ end
 -- lifetime and range they take (they stay by the seal), how many and how wide they fan out (degrees)
 DICTIONARY_CARRIER_BASE = { bolt_lifetime = 90, orb_lifetime = 240, field_radius = 32, field_lifetime = 180, field_damage = 0.25,
 	field_every = 10, splash_lifetime = 14, splash_damage = 0.35, splash_reach = 0.25, splash_drops = 3, splash_pattern = 40 }
+-- matter that sets solid where it lands: a field round the caster doesn't put it on its circle - it would wall them in
+-- (behaviors/field.lua)
+DICTIONARY_FIELD_SOLID = { ice_static = true }
 
 DICTIONARY_FORMS = { burst = "splash", column = "column", dispersion = "wave outwards", levitation = "floats", rain = "rain",
 	ring = "in a ring", field = "circle around" }
@@ -399,6 +412,8 @@ DICTIONARY_FORMS = { burst = "splash", column = "column", dispersion = "wave out
 -- Dispersion held still, a wave out from the seal for dispersion and a cloud over the target for the Sign of Rain.
 --   material  - what it is made of and leaves behind (real particles); nil: none
 --   spark     - cosmetic sparks in its color
+--   glow      - what its wave and its field round the caster shine with in place of its matter (cosmetic): Plasma is
+--               no fire to see there
 --   damage    - damage by type, as ProjectileComponent.damage_by_type (1 = 25 hp)
 --   status    - game effect on hit (data/entities/misc/*.xml)
 --   explode   - blast radius on hit, 0: none; hole: it digs
@@ -411,10 +426,11 @@ DICTIONARY_LOOKS = {
 	water  = { material = "water", spark = "spark_blue", damage = { projectile = 0.2 }, status = EFFECT .. "effect_apply_wet.xml",
 	           speed = 200, gravity = 200, splash = 60 },
 	wind   = { spark = "spark_white", damage = { projectile = 0.15 }, knockback = 80, speed = 320, gravity = 0 },
-	earth  = { material = "sand", spark = "spark", damage = { projectile = 0.5 }, knockback = 20, speed = 150, gravity = 350, splash = 60 },
+	-- earth is soil, the dirt of the caves; the Sand sigil's is sand
+	earth  = { material = "soil", spark = "spark", damage = { projectile = 0.5 }, knockback = 20, speed = 150, gravity = 350, splash = 60 },
 	light  = { spark = "spark_yellow", damage = { projectile = 0.25 }, status = EFFECT .. "effect_blindness.xml", speed = 380, gravity = 0 },
-	plasma = { material = "fire", spark = "spark_purple_bright", damage = { fire = 0.9 }, status = EFFECT .. "effect_apply_on_fire.xml",
-	           explode = 24, hole = true, speed = 200, gravity = 50, splash = 30 },
+	plasma = { material = "fire", spark = "spark_purple_bright", glow = "plasma_fading_pink", damage = { fire = 0.9 },
+	           status = EFFECT .. "effect_apply_on_fire.xml", explode = 24, hole = true, speed = 200, gravity = 50, splash = 30 },
 	ice    = { material = "blood_cold", spark = "spark_teal", damage = { ice = 0.6 }, status = EFFECT .. "effect_frozen_short.xml",
 	           speed = 180, gravity = 150, splash = 30 },
 	stone  = { material = "sand", spark = "spark", damage = { projectile = 1.1, slice = 0.2 }, knockback = 40, explode = 8, hole = true,
@@ -449,16 +465,21 @@ DICTIONARY_LOOKS = {
 	           speed = 280, gravity = 40, splash = 40 },
 	smog   = { material = "smoke", spark = "spark_red", damage = { fire = 0.2 }, status = EFFECT .. "effect_apply_on_fire.xml", speed = 170,
 	           gravity = -20, splash = 80 },
+	-- the game casts these two (DICTIONARY_OVERRIDES) but for the circle round the caster: a field of their own
+	beam   = { spark = "spark_white_bright", damage = { fire = 0.45 }, status = EFFECT .. "effect_blindness.xml", speed = 600, gravity = 0 },
+	ball_lightning = { spark = "spark_electric", damage = { electricity = 0.9 }, status = EFFECT .. "effect_electricity.xml", explode = 12,
+	           speed = 260, gravity = 0 },
 }
 
 -- Where Noita has a unique mechanic of its own, it is used instead: black holes, lasers, lightning,
--- an empty ring's shockwave. A form left out here is the element's own (the wave, the ring of lights) when it has
--- one, else the burst.
+-- an empty ring's shockwave. A form left out here is the element's own (the wave, the field round the caster, the ring
+-- of lights) when it has one, else the burst.
 local DECK = "data/entities/projectiles/deck/"
 DICTIONARY_OVERRIDES = {
 	vacuum = {
 		column = { file = DECK .. "black_hole.xml", text = "black hole" },
 		dispersion = { file = DECK .. "projectile_gravity_field.xml", at = "self", text = "field that draws projectiles" },
+		field = { file = DECK .. "projectile_gravity_field.xml", at = "self", text = "field that draws projectiles" },
 		levitation = { file = DECK .. "black_hole.xml", carrier = "orb", text = "slow black hole" },
 		burst = { file = DECK .. "black_hole.xml", text = "black hole" },
 		rain = { file = DECK .. "black_hole.xml", at = "sky", carrier = "cloud", copies = 3, pattern = 20, text = "black holes from the sky" },
@@ -503,7 +524,9 @@ function dictionary_effect( element, form, floats )
 		local name = DICTIONARY_ELEMENTS[element].name:lower()
 		return { file = carrier_file( element, "ring" ), carrier = "ring", at = "self", text = "ring around: " .. name }
 	end
-	if overrides and not overrides[form] and form == "dispersion" and DICTIONARY_LOOKS[element] then overrides = nil end
+	-- the wave and the field round the caster are the element's own, where the game has none (Lightning's field was the
+	-- game's electric field at the cursor)
+	if overrides and not overrides[form] and ( form == "dispersion" or form == "field" ) and DICTIONARY_LOOKS[element] then overrides = nil end
 	if overrides then
 		local effect = overrides[form] or overrides.burst or overrides.column
 		-- the game's projectiles: fly from the hand, hang at the target or stand around the caster

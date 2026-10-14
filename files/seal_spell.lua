@@ -67,7 +67,10 @@ function compile_spell( seal )
 	-- read about as well as Dispersion - doesn't stop it
 	local wiki
 	local function wiki_seal()
-		if wiki == nil then wiki = seal_name( seal ) ~= nil end
+		if wiki == nil then
+			local key, _, swapped = seal_name( seal )
+			wiki = key ~= nil and ( not swapped or seal_page_takes( GRIMOIRE_BY_KEY[key], swapped ) )
+		end
 		return wiki
 	end
 	for _, symbol in ipairs( seal.symbols ) do
@@ -337,9 +340,16 @@ function compile_spell( seal )
 	for key, w in pairs( behaviors ) do behaviors[key] = round2( w ) end
 
 	-- the wiki's seal this one is, if the drawing is close enough to one (grimoire.lua)
-	local named, distance = seal_name( seal )
+	local named, distance, swapped = seal_name( seal )
+	if named and swapped then
+		-- drawn round another element's sigil than its own: the page in that element, when its magic takes one (Pyreball
+		-- round water: an orb of water at the cursor); otherwise the drawing is no longer that page (Integration round fire)
+		local entry = GRIMOIRE_BY_KEY[named]
+		if seal_page_takes( entry, swapped ) then swapped = seal_page_element( entry, swapped ) else named, swapped = nil, nil end
+	end
 	if named then
 		spell.named = named
+		if swapped then spell.element, spell.swapped = swapped, swapped end
 		-- a faithful drawing of a known seal is a clean one, however many signs it has
 		if distance then spell.precision = round2( math.max( spell.precision, seal_canon_precision( distance ) ) ) end
 		local entry = GRIMOIRE_BY_KEY and GRIMOIRE_BY_KEY[named]
@@ -386,12 +396,19 @@ function compile_spell( seal )
 	return spell
 end
 
+-- A wiki's page by name, and the element it is cast in when not its own: "Pyreball (Water)"
+function seal_page_title( entry, element )
+	local own = ( entry.spell or "" ):match( "^element=([%w_]+)" )
+	if not element or element == own or not DICTIONARY_ELEMENTS[element] then return entry.name end
+	return entry.name .. " (" .. DICTIONARY_ELEMENTS[element].name .. ")"
+end
+
 -- The spell in words: the wiki's name, if it is one of its seals, or what it does
 function spell_summary( spell, carrier )
 	local entry = spell.named and GRIMOIRE_BY_KEY and GRIMOIRE_BY_KEY[spell.named]
 	if entry then
 		-- and what the signs drawn on top of it add
-		local parts = { entry.name }
+		local parts = { seal_page_title( entry, spell.swapped ) }
 		for _, b in ipairs( DICTIONARY_BEHAVIORS ) do
 			if spell.extras and spell.extras[b.key] and b.text then parts[#parts + 1] = b.text end
 		end
@@ -485,6 +502,8 @@ function seal_page_data( spell )
 	local entry = spell.named and GRIMOIRE_BY_KEY and GRIMOIRE_BY_KEY[spell.named]
 	if not entry or entry.spell == "" then return serialize_spell( spell ) end
 	local data = entry.spell
+	-- drawn round another element's sigil: the page in that element (seal_page_takes)
+	if spell.swapped then data = data:gsub( "^element=[%w_]+", "element=" .. spell.swapped, 1 ) end
 	if spell.extras then data = add_behaviors( data, spell.extras ) end
 	local precision, stability = tostring( spell.precision or 1 ), tostring( spell.stability or 1 )
 	if data:find( "precision=", 1, true ) then
@@ -524,8 +543,13 @@ function seal_named_spell( strokes, unread )
 		spell.data = seal_page_data( { named = page.key, precision = precision, stability = 1 } )
 			:gsub( "element=[%w_]+", "element=" .. element, 1 ):gsub( ";named=[%w_]+", "", 1 )
 	else
-		spell = { named = page.key, summary = page.name, precision = precision, stability = 1,
-			element = page.spell:match( "element=([%w_]+)" ) or "light" }
+		spell = { named = page.key, precision = precision, stability = 1, element = page.spell:match( "element=([%w_]+)" ) or "light" }
+		-- signs drawn beside it add what its way of manifesting takes, as on a page of signs (Water Dragon and two
+		-- Expansions: a bigger dragon)
+		local beside = seal_extra_strokes( strokes, page.key )
+		local tree = beside and parse_seal( beside )
+		if tree then spell.extras = extra_behaviors( tree, { spell = page.spell, manifest = page.manifest } ) end
+		spell.summary = spell_summary( spell )
 		spell.data = seal_page_data( spell )
 	end
 	spell.quality = precision >= SEAL_FLAWLESS and "Flawless seal!" or ( "Precision " .. math.floor( precision * 100 + 0.5 ) .. "%" )
@@ -537,9 +561,14 @@ end
 -- Returns the spell (or nil and why not) and the seal tree when the drawing was read symbol by symbol
 function read_spell( strokes )
 	local spell = seal_named_spell( strokes )
-	if spell then return spell end
+	-- a page drawn round an element's sigil is read sign by sign too: its sigil may be another element's (the page in it,
+	-- or no longer the page: seal_page_takes). A page that takes any sigil in its middle tells it itself (seal_middle)
+	local whole = spell and spell.named and GRIMOIRE_BY_KEY[spell.named]
+	if spell and not ( whole and seal_page_sigil( whole ) and not whole.middle ) then return spell end
+	whole, spell = spell, nil
 	local seal, err, partial = parse_seal( strokes )
 	if seal then spell, err = compile_spell( seal ) end
+	if not spell and whole then return whole end
 	if not spell then
 		local copy = seal_named_spell( strokes, true )
 		if copy then return copy, nil, seal end

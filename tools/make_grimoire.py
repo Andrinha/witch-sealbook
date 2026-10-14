@@ -361,7 +361,9 @@ def write_lua(entries, path=None):
         "--   effect (what it does in the game), spell (serialize_spell of the page), symbols (what the page reads as:",
         "--   seal_symbols_key; empty: the book knows it only as a whole), recipe (the symbols it is drawn of),",
         "--   book (the smallest book it fits in, books.lua: none - the Spellbook), middle and middle_reach (the sigil in",
-        "--   the middle of a seal that takes any sigil, and how far it reaches: seal_canon.lua middle_sigil), strokes",
+        "--   the middle of a seal that takes any sigil, and how far it reaches: seal_canon.lua middle_sigil), takes (the",
+        "--   elements its magic takes, drawn round another's sigil than its own: \"any\", \"matter\", natures; seal_canon.lua",
+        "--   seal_page_takes), strokes",
         "--   (grimoire_strokes)",
         "",
         "GRIMOIRE = {",
@@ -381,6 +383,8 @@ def write_lua(entries, path=None):
             fields.append(f"book = {lua_string(e['book'])}")
         if e.get("middle"):
             fields.append(f"middle = {lua_string(e['middle'])}, middle_reach = {e['middle_reach']}")
+        if e.get("takes"):
+            fields.append(f"takes = {lua_string(e['takes'])}")
         fields.append(f"strokes = {lua_string(e['strokes'])}")
         lines.append("\t{ " + ", ".join(fields) + " },")
     lines += [
@@ -445,7 +449,8 @@ def build(only=None, verbose=True, keep_spells=False):
         entries.append({"key": spell.key, "name": spell.name, "en": spell.en, "category": spell.category, "status": spell.status,
                         "effect": spell.effect, "manifest": spell.manifest, "forbidden": spell.forbidden,
                         "strokes": encoded, "spell": "", "recipe": recipe_signature(spell), "book": book_size(spell, encoded),
-                        "middle": spell.middle and spell.middle[0], "middle_reach": spell.middle and spell.middle[1]})
+                        "middle": spell.middle and spell.middle[0], "middle_reach": spell.middle and spell.middle[1],
+                        "takes": spell.takes})
     # first without the spells, so the canonical matcher can see every page; then compile each page
     write_lua(entries)
     lua = lua_runtime()

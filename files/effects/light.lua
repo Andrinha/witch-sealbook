@@ -222,7 +222,8 @@ MODES.lamp = function( e, p, age, x, y )
 		EntityKill( e )
 		return
 	end
-	if age == 0 then EntityAddComponent2( e, "LightComponent", { radius = 170, r = 255, g = 235, b = 170, fade_out_time = 1.5 } ) end
+	-- (Expansion widens its light)
+	if age == 0 then EntityAddComponent2( e, "LightComponent", { radius = math.floor( 170 * ( p.big or 1 ) ), r = 255, g = 235, b = 170, fade_out_time = 1.5 } ) end
 	local bob = math.sin( age * 0.05 ) * 1.5
 	local rim, wall, tip = 0, 0
 	if p.lantern == 1 then

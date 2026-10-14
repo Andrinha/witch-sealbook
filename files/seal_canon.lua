@@ -4,8 +4,10 @@
 --   seal_name( seal )       -> the wiki's seal a read drawing is: by its shape and by its symbols
 --   whole_alike / whole_sure( distance, second ) -> a drawing is a page known only as a whole / a page of signs
 --   seal_middle( strokes, entry ) -> the page of a seal that takes any sigil in its middle
+--   (seal_name also tells a page drawn round another element's sigil: seal_page_takes, seal_page_element)
 
 local find_ring, bbox, recognize_symbol, clamp = SealRead.find_ring, SealRead.bbox, SealRead.recognize_symbol, SealRead.clamp
+local sigil_score = SealRead.sigil_score
 local STRONG_SIGIL = SealRead.STRONG_SIGIL
 
 local CANON_MATCH = 0.105    -- mean distance (share of the radius) under which a seal is the wiki's seal
@@ -274,6 +276,51 @@ function seal_canonical( seal )
 	return result[1], result[2], result[3]
 end
 
+-- The strokes of a drawing of the page 'key' that are none of the page's - lying far from its lines, the drawing turned
+-- onto the page as seal_canonical turns it: signs drawn beside one of the wiki's seals known as a whole, to add to it as
+-- to a page of signs (seal_spell.lua seal_named_spell); with the ring's strokes, or nil when there are none - or so many
+-- that the drawing is more than the page with a few signs beside it
+local EXTRA_FAR = 0.1    -- a stroke whose points lie this far from the page's lines on average (share of the radius) ...
+local EXTRA_SHARE = 0.3  -- ... all such no more than this share of the ink
+function seal_extra_strokes( strokes, key )
+	if not seal_canonical( { strokes = strokes } ) and not grimoire_clouds then return nil end
+	local page
+	for _, entry in ipairs( grimoire_clouds or {} ) do
+		if entry.key == key then page = entry.cloud end
+	end
+	local ring, parts = find_ring( strokes )
+	if not page or not ring then return nil end
+	local mine = seal_cloud( strokes, ring, parts )
+	if not mine or mine.n < 4 then return nil end
+	local best, turn
+	for _, try in ipairs( CANON_TRIES ) do
+		local d = chamfer( mine, page, try[1], nil, try[2] )
+		if not best or d < best then best, turn = d, try end
+	end
+	local cos, sin = math.cos( turn[1] ) * turn[2], math.sin( turn[1] ) * turn[2]
+	local out, extra, total = {}, {}, 0
+	for i, stroke in ipairs( strokes ) do
+		if parts[i] then
+			out[#out + 1] = stroke
+		elseif #stroke > 0 then
+			local lines, length = seal_lines( { stroke }, ring )
+			local samples = sample_lines( lines, 0.02 )
+			local sum = 0
+			for k = 1, samples.n do
+				local x, y, dir = samples.xs[k], samples.ys[k], samples.dirs[k]
+				sum = sum + nearest( page.cells, x * cos - y * sin, x * sin + y * cos, dir and dir + turn[1] )
+			end
+			total = total + length
+			if samples.n > 0 and sum / samples.n >= EXTRA_FAR then extra[#extra + 1] = { stroke, length } end
+		end
+	end
+	local length = 0
+	for _, e in ipairs( extra ) do length = length + e[2] end
+	if #extra == 0 or length > EXTRA_SHARE * total then return nil end
+	for _, e in ipairs( extra ) do out[#out + 1] = e[1] end
+	return out
+end
+
 -- How precise a drawing of a wiki's seal is, from how far it is from the wiki's page: a faithful copy is a clean one
 function seal_canon_precision( distance )
 	return clamp( 1 - 0.6 * distance / CANON_MATCH, 0.4, 1 )
@@ -475,18 +522,115 @@ local function symbols_page( seal )
 	return nil
 end
 
--- A copy of a whole seal drawn of the book's symbols (Flame Shot's ten Regions) whose shape is a hair nearer another
--- page (Petrification, as near as it): the page it is drawn like that has most of its symbols, the nearest of them
-local function recipe_page( seal )
-	if not GRIMOIRE or sign_count( seal ) < SYMBOLS_PAGE_SIGNS then return nil end
-	local best, best_d
-	for _, entry in ipairs( GRIMOIRE ) do
-		if ( entry.symbols or "" ) == "" and ( entry.recipe or "" ) ~= "" and symbols_alike( entry.recipe, seal.symbols ) then
-			local d = page_distance( seal, entry.key )
-			if d and d <= CANON_MATCH and ( not best_d or d < best_d ) then best, best_d = entry.key, d end
+-- The one element sigil a page is drawn round (its recipe's: Pyreball's fire, the Water Bolt's water), or nil: a page of
+-- no element sigil, or of two (Vapor Bubble's water and wind). Its decorative and special sigils (Bird of Light's birds,
+-- Raincleaver's sword) are no element's.
+local function element_sigil( key )
+	local def = DICTIONARY_SIGILS[key]
+	return def and def.element and not def.manifest and not def.shape and not def.behavior
+end
+local page_sigils = {}
+function seal_page_sigil( entry )
+	if page_sigils[entry.key] == nil then
+		local found = false
+		for key in ( entry.recipe or "" ):gmatch( "sigil:([%w_]+)=" ) do
+			if element_sigil( key ) then
+				if found and found ~= key then found = false; break end
+				found = key
+			end
+		end
+		page_sigils[entry.key] = found
+	end
+	return page_sigils[entry.key] or nil
+end
+
+-- Whether a page's magic takes another element than its own (grimoire.lua 'takes': "any" - Pyreball, the Water Bolt;
+-- "matter" - an element with matter of its own to pour or draw (Watershot), but no fire or lava to pour on the witch; or
+-- natures, resonances.lua - "bright,hot"), and the element it is cast in then: as the page's own is its sigil's, or its
+-- sigil's compressed (the Great Water Bolt's ice: Fire's is plasma)
+local BURNING_MATTER = { fire = true, lava = true }
+function seal_page_element( entry, element )
+	local own = seal_page_sigil( entry )
+	local page = ( entry.spell or "" ):match( "^element=([%w_]+)" )
+	own = own and DICTIONARY_SIGILS[own].element
+	if own and page ~= own and DICTIONARY_ELEMENTS[own] and DICTIONARY_ELEMENTS[own].condensed == page then
+		element = DICTIONARY_ELEMENTS[element] and DICTIONARY_ELEMENTS[element].condensed or element
+	end
+	return element
+end
+function seal_page_takes( entry, element )
+	local takes = entry and entry.takes
+	if not takes then return false end
+	element = seal_page_element( entry, element )
+	if takes == "any" then return true end
+	if takes == "matter" then
+		local material = ( DICTIONARY_LOOKS[element] or {} ).material
+		return material ~= nil and not BURNING_MATTER[material]
+	end
+	for nature in takes:gmatch( "%a+" ) do
+		if ( RESONANCE_NATURES[element] or {} )[nature] then return true end
+	end
+	return false
+end
+
+-- A page drawn round another element's sigil than its own (a player drew Flame Shot round water and got a plain water
+-- shot; a faithful copy of Pyreball round water cast fire): the element of the one element sigil the reading has -
+-- read clearly, or clearly better than as the page's own sigil (its own drawn roughly is still its own) - and the
+-- page's recipe round that sigil; nil when it has the page's sigil, one its picture reads as, none, or two alike (a
+-- glyph of the page read as a sigil besides reads much worse: Floatglow's Stability waves as Lightning)
+local SWAP_CLEARER = 0.05
+local SWAP_ALONE = 0.2
+local function sigil_swap( entry, symbols )
+	local own = seal_page_sigil( entry )
+	if not own then return nil end
+	local sigil, second
+	for _, s in ipairs( symbols or {} ) do
+		if s.kind == "sigil" and element_sigil( s.key ) then
+			if not sigil or s.score > sigil.score then sigil, second = s, sigil
+			elseif not second or s.score > second.score then second = s end
 		end
 	end
-	return best, best_d
+	if second and second.key ~= sigil.key and second.score > sigil.score - SWAP_ALONE then return nil end
+	if not sigil or sigil.key == own or ( entry.symbols or "" ):find( "sigil:" .. sigil.key .. "=", 1, true ) then return nil end
+	if sigil.score < STRONG_SIGIL and sigil_score( sigil.strokes or {}, own ) > sigil.score - SWAP_CLEARER then return nil end
+	return DICTIONARY_SIGILS[sigil.key].element, ( ( entry.recipe or "" ):gsub( "sigil:" .. own .. "=", "sigil:" .. sigil.key .. "=" ) )
+end
+
+-- A copy of a whole seal drawn of the book's symbols (Flame Shot's ten Regions) whose shape is a hair nearer another
+-- page (Petrification, as near as it): the page it is drawn like that has most of its symbols, the nearest of them; and
+-- the element it is drawn in, when it is drawn round another element's sigil than the page's
+local function recipe_page( seal )
+	if not GRIMOIRE or sign_count( seal ) < SYMBOLS_PAGE_SIGNS then return nil end
+	local best, best_d, best_element
+	for _, entry in ipairs( GRIMOIRE ) do
+		if ( entry.symbols or "" ) == "" and ( entry.recipe or "" ) ~= "" then
+			local element, recipe = nil, entry.recipe
+			if not symbols_alike( recipe, seal.symbols ) then element, recipe = sigil_swap( entry, seal.symbols ) end
+			if recipe and symbols_alike( recipe, seal.symbols ) then
+				local d = page_distance( seal, entry.key )
+				if d and d <= CANON_MATCH and ( not best_d or d < best_d ) then best, best_d, best_element = entry.key, d, element end
+			end
+		end
+	end
+	return best, best_d, best_element
+end
+
+-- A page whose magic takes another element, drawn round another element's sigil and so a little farther from it in shape
+-- than the whole drawing's likeness names (Watershot round earth: the earth sigil is wider than the water sigil): the
+-- page, the nearest of those with its recipe round that sigil read, its distance and the sigil's element
+local function swapped_page( seal )
+	if not GRIMOIRE or sign_count( seal ) < SYMBOLS_PAGE_SIGNS then return nil end
+	local best, best_d, best_element
+	for _, entry in ipairs( GRIMOIRE ) do
+		if entry.takes then
+			local element, recipe = sigil_swap( entry, seal.symbols )
+			if element and symbols_alike( recipe, seal.symbols ) then
+				local d = page_distance( seal, entry.key )
+				if d and d <= CANON_MATCH and ( not best_d or d < best_d ) then best, best_d, best_element = entry.key, d, element end
+			end
+		end
+	end
+	return best, best_d, best_element
 end
 
 -- The wiki's seal a read drawing is by its shape, and how far it is from it
@@ -497,6 +641,14 @@ local function seal_shape_name( seal )
 	if ( entry.symbols or "" ) ~= "" then
 		-- the same symbols as the page reads as, or as the seal is drawn of
 		if symbols_alike( entry.symbols, seal.symbols ) or symbols_alike( entry.recipe or "", seal.symbols ) then return key, distance end
+		-- drawn round another element's sigil: the page in that element - when its magic takes one (compile_spell)
+		local element, recipe = sigil_swap( entry, seal.symbols )
+		if element then
+			if symbols_alike( recipe, seal.symbols ) or ( distance <= CANON_CLOSE and distance <= CANON_CLOSE_APART * second ) then
+				return key, distance, element
+			end
+			return nil
+		end
 		-- very close in shape, with most of the symbols (a sigil misread in a faithful drawing)
 		local share = math.max( symbols_share( entry.symbols, seal.symbols ), ( symbols_share( entry.recipe or "", seal.symbols ) ) )
 		if distance <= CANON_CLOSE and distance <= CANON_CLOSE_APART * second and share >= SYMBOLS_LOOSE then return key, distance end
@@ -506,22 +658,32 @@ local function seal_shape_name( seal )
 	if whole_alike( distance, second ) then
 		-- with a sigil in its middle that no page has, it is none of the wiki's seals: it is read sign by sign
 		local page, element = seal_middle( seal.strokes, entry )
-		if not element then return page.key, distance end
+		if not element then return page.key, distance, ( sigil_swap( page, seal.symbols ) ) end
 	end
 	-- a whole seal drawn of the book's symbols (Flame Shot's ten Regions): a copy with a few of its signs more or fewer -
-	-- hands don't count them - is still that seal when it looks like it and most of its symbols are the page's
-	if ( entry.recipe or "" ) ~= "" and sign_count( seal ) >= SYMBOLS_PAGE_SIGNS and symbols_alike( entry.recipe, seal.symbols ) then
-		return key, distance
+	-- hands don't count them - is still that seal when it looks like it and most of its symbols are the page's (or would
+	-- be, round the page's own sigil)
+	if ( entry.recipe or "" ) ~= "" and sign_count( seal ) >= SYMBOLS_PAGE_SIGNS then
+		if symbols_alike( entry.recipe, seal.symbols ) then return key, distance end
+		local element, recipe = sigil_swap( entry, seal.symbols )
+		if element and symbols_alike( recipe, seal.symbols ) then return key, distance, element end
 	end
 	return nil
 end
 
 -- The wiki's seal a read drawing is (its key) and how far it is from the page in shape (nil when it is that seal by
--- its symbols alone), or nil
+-- its symbols alone), or nil; and, for a page drawn round another element's sigil than its own, that sigil's element:
+-- the page in that element, when its magic takes one (seal_page_takes)
 function seal_name( seal )
-	local key, distance = seal_shape_name( seal )
-	if key then return key, distance end
-	key, distance = symbols_page( seal )
-	if key then return key, distance end
-	return recipe_page( seal )
+	local key, distance, element = seal_shape_name( seal )
+	if key and not element then return key, distance end
+	-- a page of the reading's own symbols (Lightning Spell, drawn as Light Beam round the lightning sigil) comes before a
+	-- page in another element - drawn as like it (Smoke Cloud round water is not Watershot: its columns point out)
+	local page, near = symbols_page( seal )
+	if page and key then near = near or page_distance( seal, page ) end
+	if page and ( not key or ( near and near <= distance ) ) then return page, near end
+	if key then return key, distance, element end
+	key, distance, element = recipe_page( seal )
+	if key then return key, distance, element end
+	return swapped_page( seal )
 end

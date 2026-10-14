@@ -77,6 +77,7 @@ function carriers_create()
 		local common = {
 			material = look.material or "air",
 			spark = look.spark or "spark_white",
+			glow = look.glow or "",
 			r = color[1], g = color[2], b = color[3],
 			status = look.status or "",
 			damage_by_type = table.concat( damage_attrs, " " ),
@@ -119,8 +120,9 @@ function carriers_create()
 			radius = math.floor( common.radius / 2 ), lifetime = BASE.splash_lifetime, die_on_low_velocity = 1, sprite = bolt_sprite,
 			sprite_offset = 2, trail_count = 2, trail_interval = 1, light_radius = 30,
 		} ) ), key, false ) )
+		-- the field: its script (behaviors/field.lua) puts its matter on its circle every other frame
 		ModTextFileSetContent( carrier_file( key, "field" ), fire_audio( fill( field, copy( common, {
-			field_radius = BASE.field_radius, field_lifetime = BASE.field_lifetime, field_interval = 1,
+			field_radius = BASE.field_radius, field_lifetime = BASE.field_lifetime, field_interval = 2,
 			field_damage = main_amount * BASE.field_damage, field_every = BASE.field_every,
 			field_damage_type = DAMAGE_TYPES[main_type] or "DAMAGE_PROJECTILE",
 			light_radius = 60,

@@ -176,7 +176,12 @@ local function touch( spell, how )
 	table.sort( types )
 	if #types > 0 then parts[#parts + 1] = table.concat( types, "+" ) .. " damage" end
 	parts[#parts + 1] = status_word( look.status )
-	if look.material then parts[#parts + 1] = "leaves " .. look.material:gsub( "_", " " ) end
+	-- (a field puts no matter that sets solid on its circle: behaviors/field.lua; an element with a glow of its own shines
+	-- with it in its wave and its field in place of its matter)
+	local shines = look.glow and ( how.carrier == "field" or how.carrier == "nova" )
+	if look.material and not shines and not ( how.carrier == "field" and DICTIONARY_FIELD_SOLID[look.material] ) then
+		parts[#parts + 1] = "leaves " .. look.material:gsub( "_", " " )
+	end
 	if ( look.knockback or 0 ) >= 60 then parts[#parts + 1] = "knocks back" end
 	-- the element's nature (element_traits.lua): how its shots and orbs fly and what they leave where they end
 	if TRAIT_CARRIERS and TRAIT_CARRIERS[how.carrier] then
@@ -334,8 +339,12 @@ function spell_notes( data, plain )
 	local entry = spell.named and GRIMOIRE_BY_KEY and GRIMOIRE_BY_KEY[spell.named]
 	local resonance = spell.resonance and not spell.named and RESONANCE_BY_KEY[spell.resonance]
 	if entry then
-		add( entry.name, "head" )
+		add( seal_page_title( entry, spell.element ), "head" )
 		add( entry.effect, "body" )
+		-- drawn round another element's sigil than its own: the page in that element (seal_page_takes)
+		if seal_page_title( entry, spell.element ) ~= entry.name then
+			add( "Drawn round another sigil than its own, it casts in " .. name_of( spell.element ) .. ".", "body" )
+		end
 	elseif resonance and resonance.replaces then
 		add( ( resonance_title( resonance, spell.element ) .. ": " .. resonance.text ):gsub( "^%l", string.upper ), "head" )
 	else

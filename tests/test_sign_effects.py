@@ -311,8 +311,119 @@ class InTheWorld(unittest.TestCase):
         self.assertEqual(effect("thunder", "dispersion")[0], "nova")
         for element in ("vacuum", "beam", "thunder", "ball_lightning"):
             self.assertEqual(effect(element, "ring")[0], "ring", element)
+            # the circle round the caster, not the game's electric field at the cursor (a player's report)
+            self.assertEqual(effect(element, "field"), ("field", "self"), element)
         for element in ("vacuum", "beam", "ball_lightning"):
             self.assertEqual(effect(element, "rain"), ("cloud", "sky"), element)
+
+    def record(self):
+        """a new world, where the real particles (MATTER) and the cosmetic ones (COSMETIC) made from now on are kept:
+        { material, x, y }"""
+        self.lua.execute('''
+            make_world(); W.frame = 1000; W.damage = 0
+            MATTER, COSMETIC = {}, {}
+            CREATE_PARTICLE = CREATE_PARTICLE or GameCreateParticle
+            function GameCreateParticle( m, x, y, ... )
+                MATTER[#MATTER + 1] = { m, x, y }
+                return CREATE_PARTICLE( m, x, y, ... )
+            end
+            CREATE_COSMETIC = CREATE_COSMETIC or GameCreateCosmeticParticle
+            function GameCreateCosmeticParticle( m, x, y, ... )
+                COSMETIC[#COSMETIC + 1] = { m, x, y }
+                return CREATE_COSMETIC( m, x, y, ... )
+            end
+        ''')
+
+    def field_matter(self, data, frames=150):
+        """where a field's matter appeared while it lasted, as distances from its middle; the field (cast alone in a new
+        world)"""
+        self.record()
+        self.cast(data)
+        field = self.entity_with("AreaDamageComponent")
+        x, y = self.lua.eval(f"EntityGetTransform( {field} )")[:2]
+        self.lua.execute(f"simulate( {frames} )")
+        matter = [(m[1], math.hypot(m[2] - x, m[3] - y)) for m in self.lua.eval("MATTER").values()]
+        return matter, field
+
+    def test_field_keeps_its_matter_on_its_circle(self):
+        """Players saw the circle of fire, water, sand, smoke run out as a wave: the game's circle spell it was built on
+        grows its ring out to 256 pixels. The field's matter stays on its own circle, where its damage is"""
+        # (Earth's matter is soil - a player: "the earth sigil creates sand, not dirt" - Sand's is sand)
+        for element, material in (("fire", "fire"), ("water", "water"), ("earth", "soil"), ("sand", "sand"), ("smoke", "smoke")):
+            matter, _ = self.field_matter(f"element={element};form=field;b=")
+            self.assertGreater(len(matter), 20, element)
+            self.assertEqual({material}, {m for m, _ in matter}, element)
+            self.assertLess(max(d for _, d in matter), 33, element)
+            self.assertGreater(min(d for _, d in matter), 31, element)
+        # not through the ground under the caster: the circle's lower part lies in it
+        self.field_matter("element=water;form=field;b=")
+        ground = self.lua.eval("GROUND")
+        self.assertFalse([m[3] for m in self.lua.eval("MATTER").values() if m[3] > ground], "matter under the ground")
+        # Crystal's ice would wall the caster in: its circle is sparks alone
+        matter, _ = self.field_matter("element=crystal;form=field;b=")
+        self.assertEqual([], matter)
+        self.no_errors()
+
+    def test_expansion_makes_the_field_s_circle_bigger(self):
+        """A player: the circle around isn't affected by Expansion - its damage area grew, its sparks and matter didn't"""
+        def circle(data):
+            matter, field = self.field_matter(data, frames=60)
+            emitter = self.lua.eval(f'EntityGetFirstComponent( {field}, "ParticleEmitterComponent" )')
+            lo, hi = self.lua.eval(f'ComponentGetValue2( {emitter}, "area_circle_radius" )')
+            return hi, max(d for _, d in matter)
+        sparks, matter = circle("element=fire;form=field;b=")
+        big_sparks, big_matter = circle("element=fire;form=field;b=grow:1")
+        self.assertGreater(big_sparks, sparks * 1.3)
+        self.assertGreater(big_matter, matter * 1.3)
+        self.no_errors()
+
+    def test_plasma_is_no_fire_in_the_wave_and_the_field(self):
+        """A player: Convergence on a fire wave or circle gave a fire wave, not the plasma one the book promised - Plasma's
+        wave and field shone with fire's matter. They glow with plasma of their own now, and its wave strikes harder"""
+        def wave(element):
+            self.record()
+            self.cast(f"element={element};form=dispersion;force=0.5;b=")
+            self.lua.execute("simulate( 25 )")
+            matter = {m[1] for m in self.lua.eval("MATTER").values()}
+            glow = [m for m in self.lua.eval("COSMETIC").values() if m[1] == "plasma_fading_pink"]
+            return self.lua.eval("W.damage"), matter, len(glow)
+        fire, fire_matter, fire_glow = wave("fire")
+        plasma, plasma_matter, plasma_glow = wave("plasma")
+        self.assertIn("fire", fire_matter)
+        self.assertEqual(0, fire_glow)
+        self.assertNotIn("fire", plasma_matter)
+        self.assertGreater(plasma_glow, 50)
+        self.assertGreater(fire, 0)
+        self.assertAlmostEqual(plasma, fire * self.lua.eval("DICTIONARY_CONDENSED_WAVE"), places=3)
+        # the circle round the caster: plasma glowing on it, no fire
+        matter, field = self.field_matter("element=plasma;form=field;b=", frames=60)
+        self.assertEqual([], matter)
+        x, y = self.lua.eval(f"EntityGetTransform( {field} )")[:2]
+        glow = [math.hypot(m[2] - x, m[3] - y) for m in self.lua.eval("COSMETIC").values() if m[1] == "plasma_fading_pink"]
+        self.assertGreater(len(glow), 30)
+        self.assertLess(max(glow), 33)
+        self.no_errors()
+
+    def test_field_gives_its_element_s_touch_to_whom_is_inside(self):
+        """The notes say the circle of fire sets on fire, of water wets...: the creatures inside take it"""
+        self.lua.execute('''
+            TOUCHED = {}
+            function LoadGameEffectEntityTo( target, file ) TOUCHED[#TOUCHED + 1] = { target, file } return 0 end
+        ''')
+        self.lua.execute("EntitySetTransform( ENEMIES[3], 20, GROUND - 4 )")
+        self.cast("element=thunder;form=field;b=")
+        self.lua.execute("simulate( 90 )")
+        touched = [(t[1], t[2]) for t in self.lua.eval("TOUCHED").values()]
+        enemy = self.lua.eval("ENEMIES[3]")
+        self.assertIn((enemy, "data/entities/misc/effect_electricity.xml"), touched)
+        # only the creatures inside: the enemy 120 px away is not
+        self.assertNotIn(self.lua.eval("ENEMIES[1]"), [t for t, _ in touched])
+        # an element with no touch (wind) gives none
+        self.lua.execute("TOUCHED = {}; make_world(); W.frame = 1000; EntitySetTransform( ENEMIES[3], 20, GROUND - 4 )")
+        self.cast("element=wind;form=field;b=")
+        self.lua.execute("simulate( 90 )")
+        self.assertEqual([], list(self.lua.eval("TOUCHED").values()))
+        self.no_errors()
 
 
 if __name__ == "__main__":

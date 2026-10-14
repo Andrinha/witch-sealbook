@@ -164,6 +164,11 @@ VARIANTS = {
     "immobility": [[shapes.circle(0.5, 0.42, 0.28), line((0.5, 0.06), (0.5, 0.88)), line((0.18, 0.88), (0.82, 0.88))]],
     "projection": [[line((0.1, 0.85), (0.1, 0.25), (0.9, 0.25), (0.9, 0.85))]],
     "stability": [[wave(0.3), wave(0.7)]],
+    # Sights Set as the book's legend drew it until 2026-10-12 - the stem from the arrowhead to the diamond, not through it -
+    # and with a round loop for its diamond: players drew them so and got Levitation, a Column or Solidification
+    "sights": [[line((0.5, 0.08), (0.5, 0.66)), line((0.3, 0.3), (0.5, 0.08), (0.7, 0.3)),
+                line((0.5, 0.66), (0.63, 0.8), (0.5, 0.94), (0.37, 0.8), (0.5, 0.66))],
+               [line((0.5, 0.0), (0.5, 0.7)), line((0.35, 0.17), (0.5, 0.0), (0.65, 0.17)), shapes.circle(0.5, 0.84, 0.14)]],
 }
 
 # ... and sigils: fire with long horns standing apart from the sides of the triangle

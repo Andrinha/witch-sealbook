@@ -51,7 +51,14 @@ MODES.nova = function( e, p, age, x, y )
 		fx_dot( x + c * r, y + s * r, c1, c * 40, s * 40, 0.12 )
 		if i % 3 == 0 then fx_dot( x + c * ( r - 3 ), y + s * ( r - 3 ), c2, c * 20, s * 20, 0.1 ) end
 	end
-	if look.material and age % 2 == 0 then
+	if look.glow then
+		-- an element with a glow of its own shines with it in place of its matter (Plasma: no fire to see there)
+		for i = 1, 8 do
+			local a = Random( 0, 628 ) / 100
+			GameCreateCosmeticParticle( look.glow, x + math.cos( a ) * r, y + math.sin( a ) * r, 1, math.cos( a ) * 40, math.sin( a ) * 40,
+				0, 0.2, 0.5, true, true, false, true, 0, 0 )
+		end
+	elseif look.material and age % 2 == 0 then
 		for i = 1, 6 do
 			local a = Random( 0, 628 ) / 100
 			GameCreateParticle( look.material, x + math.cos( a ) * r, y + math.sin( a ) * r, 1, math.cos( a ) * 50, math.sin( a ) * 50, false, false, true )

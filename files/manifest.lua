@@ -142,7 +142,10 @@ M.pyreball = function( ctx )
 	return { e }
 end
 
+-- Flame Shot: a long beam of flame. Drawn round another element's sigil (seal_canon.lua sigil_swap) it is a long shot of
+-- that element: a line of its shots flying far as one (cast.lua cast_long_shot)
 M.flame_shot = function( ctx )
+	if el( ctx, "fire" ) ~= "fire" and cast_long_shot then return cast_long_shot( ctx ) end
 	dofile_once( "mods/witch_notebook/files/effects/fluid.lua" )
 	local dx, dy = fire_aim( ctx )
 	local offset = 8
@@ -160,7 +163,9 @@ M.flame_shot = function( ctx )
 		frames = math.ceil( duration * 60 + length / speed * 60 ) + 16, reveal = 1 } ) }
 end
 
+-- Flame Burst; round another element's sigil a shot of that element bursts into its wave where it ends (cast.lua)
 M.flame_burst = function( ctx )
+	if el( ctx, "fire" ) ~= "fire" and cast_burst_shot then return cast_burst_shot( ctx ) end
 	local dx, dy, distance = fire_aim( ctx )
 	local offset = math.min( 8, distance )
 	local x, y = ctx.x + dx * offset, ctx.y + dy * offset
@@ -228,7 +233,8 @@ M.floatglow = function( ctx )
 			return { e }
 		end
 	end
-	return light_source( ctx, "lamp", ctx.x, ctx.y - 6, { frames = secs( ctx, 180 ), element = el( ctx, "light" ), lantern = 1 } )
+	return light_source( ctx, "lamp", ctx.x, ctx.y - 6, { frames = secs( ctx, 180 ), element = el( ctx, "light" ), lantern = 1,
+		big = grown( ctx ) } )
 end
 M.light_beam = function( ctx )
 	local dx, dy = fire_aim( ctx )
@@ -236,7 +242,7 @@ M.light_beam = function( ctx )
 end
 M.lamp = function( ctx )
 	local x, y = reach( ctx, 100 )
-	return light_source( ctx, "lamp", x, y, { frames = secs( ctx, 180 ), element = el( ctx, "light" ) } )
+	return light_source( ctx, "lamp", x, y, { frames = secs( ctx, 180 ), element = el( ctx, "light" ), big = grown( ctx ) } )
 end
 M.glowpath = function( ctx )
 	return light_source( ctx, "glowpath", ctx.x, ctx.y, { frames = secs( ctx, 120 ), dx = ctx.aim_x } )
@@ -349,7 +355,8 @@ M.carousel = function( ctx )
 		if effect_params( e ).owner == ctx.shooter then renew_light( e, secs( ctx, 25 ) ); return { e } end
 	end
 	local e = spawn( "orbit", "carousel", ctx.x, ctx.y, mine( ctx,
-		{ frames = secs( ctx, 25 ), count = 6 + 2 * math.min( 4, math.floor( mod( ctx, "pierce" ) ) ), reveal = 1 } ) )
+		{ frames = secs( ctx, 25 ), count = 6 + 2 * math.min( 4, math.floor( mod( ctx, "pierce" ) ) ), reveal = 1, element = el( ctx, "light" ),
+		big = grown( ctx ) } ) )
 	EntityAddTag( e, "witch_light_carousel" )
 	return { e }
 end
@@ -384,7 +391,9 @@ M.nova = function( ctx, x, y )
 	local throw = ( b.push or 0 ) + ( tide and 0 or ( b.gust or 0 ) )
 	local r = size( ctx, 55 )
 	x, y = x or ctx.x, y or ctx.y
-	local made = { spawn( "nova", "nova", x, y, mine( ctx, { element = element, r = r,
+	-- an element Convergence compressed strikes harder than the loose one (Plasma's wave than Fire's)
+	local damage = ( 0.3 + 0.25 * ( ctx.spell.force or 0 ) ) * ( DICTIONARY_CONDENSED[element] and DICTIONARY_CONDENSED_WAVE or 1 )
+	local made = { spawn( "nova", "nova", x, y, mine( ctx, { element = element, r = r, damage = damage,
 		force = ctx.spell.force or 0, inward = ( b.pull or 0 ) > 0 and 1 or 0, grow = 22,
 		push = throw > 0 and ( 80 + ( ( DICTIONARY_LOOKS[element] or {} ).knockback or 0 ) ) * ( 1 + 0.6 * math.min( 2, throw ) ) or nil,
 		hold = b.hold and math.floor( SIGN_AMOUNTS.hold( b.hold ).frames ) or nil,
@@ -422,8 +431,13 @@ M.shockwave = function( ctx )
 	return { spawn( "nova", "nova", ctx.x, ctx.y, mine( ctx, { element = "shockwave", r = 48,
 		grow = 14, damage = 0.08, push = 160, push_objects = 16 } ) ) }
 end
+-- The Sigil of the Sword: a blade of the seal's element. Raincleaver's sword has no element sigil beside it - its water is
+-- in the small seals round it, and the blade is of theirs (it used to cut with light, the element a seal of no sigil has)
 M.blade = function( ctx )
-	return { spawn( "nova", "slash", ctx.x, ctx.y - 2, mine( ctx, { element = el( ctx, "water" ), r = size( ctx, 28 ), dx = ctx.aim_x, dy = ctx.aim_y } ) ) }
+	local element = el( ctx, "water" )
+	local sub = ( ctx.spell.subs or {} )[1]
+	if element == "light" and sub and DICTIONARY_ELEMENTS[sub.element or ""] then element = sub.element end
+	return { spawn( "nova", "slash", ctx.x, ctx.y - 2, mine( ctx, { element = element, r = size( ctx, 28 ), dx = ctx.aim_x, dy = ctx.aim_y } ) ) }
 end
 
 ---- sculptures ----
@@ -477,10 +491,13 @@ M.dragon_steam = function( ctx ) return sculpture( ctx, "dragon", "steam", size(
 -- Watershot: water pours out of the book, as from the manga's round flasks, and never runs dry. Cast with a book
 -- it pours for as long as fire is held (cast.lua spellbook_use, effects/aura.lua pour); cast any other way, for a
 -- couple of seconds the way it was aimed. Expansion and force make the stream thicker.
+-- Drawn round another element's sigil with matter of its own, it pours that matter (seal_canon.lua seal_page_takes)
 M.water_pour = function( ctx )
 	local dx, dy = fire_aim( ctx )
+	local element = el( ctx, "water" )
 	return { spawn( "aura", "pour", ctx.x, ctx.y, mine( ctx, { frames = secs( ctx, 2 ), dx = dx, dy = dy,
-		cells = math.max( 2, math.min( 8, math.floor( size( ctx, 4 ) + 0.5 ) ) ) } ) ) }
+		cells = math.max( 2, math.min( 8, math.floor( size( ctx, 4 ) + 0.5 ) ) ), element = element,
+		material = ( DICTIONARY_LOOKS[element] or {} ).material or "water" } ) ) }
 end
 -- Water Rose: a rose of standing water grows from the nearest surface by the cursor, as the game's roots grow
 -- (effects/rose.lua), stands for a while and falls as water. Expansion and force make its stem longer.
@@ -549,7 +566,7 @@ M.wand = function( ctx )
 	local look = DICTIONARY_LOOKS[element] or {}
 	local frames = secs( ctx, 10 )
 	GlobalsSetValue( BUSY_VAR, tostring( ctx.frame + frames ) )
-	GamePrint( "Wand of Water: hold LMB to draw" )
+	GamePrint( "The pen of " .. ( DICTIONARY_ELEMENTS[element] or DICTIONARY_ELEMENTS.water ).name:lower() .. ": hold LMB to draw" )
 	return { spawn( "aura", "quill", ctx.tx, ctx.ty, mine( ctx, { frames = frames, element = element, material = look.material or "water" } ) ) }
 end
 
@@ -598,9 +615,14 @@ M.stone_arm = function( ctx )
 	local x, y = reach( ctx, 150 )
 	return { spawn( "build", "arm", x, y, mine( ctx, { frames = secs( ctx, 30 ), dx = ctx.aim_x, dy = ctx.aim_y } ) ) }
 end
+-- Spike: stone shards burst out of the ground; round another element's sigil, shards of that element
+local STONE_SHARDS = { earth = true, sand = true, stone = true }
 M.spikes = function( ctx )
 	local x, y = reach( ctx, 160 )
-	return { spawn( "zone", "spikes", x, y, mine( ctx, { frames = 5 } ) ) }
+	local element = el( ctx, "earth" )
+	local shard = ( STONE_SHARDS[element] or not DICTIONARY_LOOKS[element] ) and "stone" or element
+	return { spawn( "zone", "spikes", x, y, mine( ctx, { frames = 5, shard = shard, big = grown( ctx ),
+		material = ( DICTIONARY_LOOKS[element] or {} ).material or ( STONE_SHARDS[element] and "sand" ) or "" } ) ) }
 end
 M.wallward = function( ctx ) return { spawn( "zone", "wallward", ctx.x, ctx.y - 4, mine( ctx, { frames = 20, r = size( ctx, 34 ) } ) ) } end
 M.ice_road = function( ctx )

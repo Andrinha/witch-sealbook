@@ -84,7 +84,7 @@ C6 = [i * 60 for i in range(6)]
 class Spell:
     def __init__(self, key, name, en, page, image, category, symbols=None, traced=None, expect=None, manifest=None,
                  effect="", status="works", forbidden=False, crop=None, ring=None, note="", cast=None, trace_size=None,
-                 book=None, whole_only=False, middle=None):
+                 book=None, whole_only=False, middle=None, takes=None):
         self.key, self.name, self.en, self.page, self.image, self.category = key, name, en, page, image, category
         self.symbols = symbols  # a recipe
         self.whole_only = whole_only  # its overlapping lines must be recognized as one drawing
@@ -92,6 +92,11 @@ class Spell:
         # a share of the drawing's reach). Drawn with another sigil it is the page of its manifest with that sigil,
         # or, when there is none, casts the same in that sigil's element (seal_canon.lua middle_sigil)
         self.middle = middle
+        # the elements its magic takes when drawn round another element's sigil than its own - "any", "matter" (an
+        # element with matter of its own), natures ("bright,hot"): the page in that element (Pyreball round water: an orb
+        # of water hanging at the cursor; seal_canon.lua seal_page_takes). A page that takes none, drawn round another
+        # element's sigil, is no longer that page: it is read sign by sign
+        self.takes = takes
         self.traced = traced    # or: trace the wiki's image
         self.crop = crop        # (left, top, right, bottom) of the image to trace
         self.ring = ring        # traced: the ring (cx, cy, r) in the image's pixels, if it can't be found
@@ -382,7 +387,7 @@ SPELLS = [
     S("pyreball", "Pyreball", "Pyreball Seal", "Pyreball Seal", "Pyreball_Seal_Redraw.png", FIRE,
       [sig("fire", 0, 0.02, 0.5)] + around("levitation", D4, 0.66, 0.3),
       expect={"element": "fire", "form": "levitation", "floats": True, "behaviors": {"float"}}, manifest="pyreball",
-      effect="A ball of flame hangs at the cursor like a bonfire: it gives light, sets fire to and burns whoever is near, and burns for a long time."),
+      effect="A ball of flame hangs at the cursor like a bonfire: it gives light, sets fire to and burns whoever is near, and burns for a long time. Round another element's sigil an orb of that element hangs at the cursor instead."),
     S("spiraling_flame", "Spiraling Flame", "Spiraling Flame", "Spiraling Flame", "Spiraling_Flame_Redraw.png", FIRE,
       spiraling_flame_seal(), whole_only=True, book="quire", manifest="spiraling_flame",
       expect={"element": "fire", "manifest": "spiraling_flame"},
@@ -401,17 +406,18 @@ SPELLS = [
       + [at("regions", -0.55, -0.62 + 0.16 * i, 0.18, -90) for i in range(5)]
       + [at("regions", 0.55, -0.62 + 0.16 * i, 0.18, -90) for i in range(5)],
       # The ten small region signs can be ambiguous individually; recognize the complete seal too.
-      expect={"element": "fire", "form": "column", "behaviors": {"thrust"}}, manifest="flame_shot", whole_only=True,
-      effect="A long beam of flame strikes far ahead - the column sign across the whole seal and the regions signs stretch it out."),
+      expect={"element": "fire", "form": "column", "behaviors": {"thrust"}}, manifest="flame_shot", whole_only=True, takes="any",
+      effect="A long beam of flame strikes far ahead - the column sign across the whole seal and the regions signs stretch it out. "
+             "Drawn round another element's sigil it is a long shot of that element."),
     S("flame_burst", "Flame Burst", "Flame Burst Spell", "Flame Burst Spell", "65_5_Flame_Burst_Spell.png", FIRE,
       [sig("fire", 0, 0.02, 0.44)] + around("column", C4, 0.7, 0.24) + around("pull", D4, 0.7, 0.26),
       expect={"element": "fire", "form": "column", "behaviors": {"thrust", "pull"}}, manifest="flame_burst", status="interpreted",
       note="The manga shows the seal only in part (a scroll); here - fire, alternating columns and pulling, as the wiki describes it.",
-      effect="A small ring of fire opens at the book. A compressed jet of flame shoots forward and expands into a larger fiery blast at the target or against whatever it hits."),
+      effect="A small ring of fire opens at the book. A compressed jet of flame shoots forward and expands into a larger fiery blast at the target or against whatever it hits. Round another element's sigil a shot of that element bursts into its wave where it ends.", takes="any"),
     S("ring_of_fire", "Ring of Fire", "Ring of Fire", "Ring of Fire", "Ring_of_Fire_Redraw.png", FIRE,
       [sig("fire", 0, 0.05, 0.5), sgn("dispersion", 205, 0.62, 0.3), sgn("dispersion", 322, 0.62, 0.3), sgn("dispersion", 80, 0.6, 0.3)],
       expect={"element": "fire", "form": "dispersion"}, manifest="ring_of_fire",
-      effect="A wide ring of fire spreads out from the seal, setting fire to everything around the witch."),
+      effect="A wide ring of fire spreads out from the seal, setting fire to everything around the witch. Round another element's sigil it is a wave of that element."),
     S("snowfending", "Snowfending", "Snowfending", "Snowfending", "Snowfending_Seal_Redraw.png", FIRE,
       traced=True, manifest="snowfend",
       effect="A warm dome rises over the target: snow and ice melt, falling drops evaporate, no fire needed."),
@@ -436,7 +442,7 @@ SPELLS = [
       [sig("light", 0, 0, 0.42), at("regions", 0, -0.58, 0.26, -90), sgn("dispersion", 90, 0.6, 0.26),
        sig("bird", -0.6, 0.0, 0.46, -90), sig("bird", 0.6, 0.0, 0.46, 90)],
       expect={"element": "light", "shape": "bird"}, manifest="light_bird",
-      effect="A bird of light flies up from the seal and circles around: enemies are distracted by it until it fades."),
+      effect="A bird of light flies up from the seal and circles around: enemies are distracted by it until it fades. Round another element's sigil it is of that element."),
     S("ancient_light_beacon", "Ancient Light Beacon", "Ancient Light Beacon", "Ancient Light Beacon", "Ancient_Light_Beacon_Redraw.png", LIGHT,
       ancient_light_beacon_seal(), whole_only=True, manifest="beacon_pillar", status="interpreted",
       cast={"element": "light", "form": "burst", "b": {}},
@@ -455,18 +461,18 @@ SPELLS = [
     S("leech_of_light", "Valance Leech of Light", "Valance Leech of Light", "Valance Leech of Light", "Valance_Leech_of_Light_Redraw.png", LIGHT,
       [sig("light", 0, 0.12, 0.4), sig("leech", 0, -0.5, 0.46)] + [sgn("column", a, 0.66, 0.2, "out") for a in (200, 340, 160, 20, 90)],
       expect={"element": "light", "shape": "leech"}, manifest="light_leech",
-      effect="A decorative, gently undulating sculpture of a valance leech glows at the cursor. It neither attacks nor drains creatures."),
+      effect="A decorative, gently undulating sculpture of a valance leech glows at the cursor. It neither attacks nor drains creatures. Round another element's sigil it is of that element."),
     S("carousel", "Carousel of Lights", "Carousel of Lights", "Carousel of Lights", "Carousel_of_Lights_Redraw.png", LIGHT,
       [sig("light", 0, 0, 0.34)] + around("column", C4, 0.74, 0.26) + around("levitation", D4, 0.6, 0.26)
       + around("crosshair", [a + 22 for a in D4], 0.82, 0.14) + [sgn("windsign", a, 0.4, 0.2, "in", 90) for a in C4],
       expect={"element": "light"}, manifest="carousel", status="interpreted",
       note="The wiki lists this seal and has a redraw, but no spell article or confirmed effect. Orbiting illumination is the mod's interpretation; burning damage is not substantiated.",
-      effect="Soft lights circle the witch with flowing trails, illuminating the surroundings without fire or contact damage."),
+      effect="Soft lights circle the witch with flowing trails, illuminating the surroundings without fire or contact damage. Round the sigil of fire, flickering light or unburning flames, the lights are of that element.", takes="bright,hot,ghostly"),
     # ------------------------------------------------------------ water
     S("watershot", "Watershot", "Watershot Seal", "Watershot Seal", "Watershot_Seal_Redraw.png", WATER,
       [sig("water", 0, -0.02, 0.56)] + around("column", [0, 45, 135, 180, 225, 270, 315], 0.72, 0.16) + [sgn("column", 90, 0.6, 0.3)],
       expect={"element": "water", "form": "column", "behaviors": {"thrust"}}, manifest="water_pour",
-      effect="Water pours from the book for as long as you hold fire, and it never runs dry. It pours towards the cursor, harder the further away the cursor is."),
+      effect="Water pours from the book for as long as you hold fire, and it never runs dry. It pours towards the cursor, harder the further away the cursor is. Round the sigil of an element with matter of its own - sand, earth, smoke, mud - it pours that matter.", takes="matter"),
     S("water_rose", "Water Rose", "Water Rose", "Water Rose", "Water_Rose_Redraw.png", WATER,
       water_rose_seal(), whole_only=True, manifest="water_rose", cast={"element": "water", "form": "burst", "b": {}},
       expect={"element": "water", "manifest": "water_rose"},
@@ -482,12 +488,12 @@ SPELLS = [
       [frame("holding", 1.0, 0, 0, 0.06), sig("water", 0, 0.06, 0.4), sgn("column", 270, 0.66, 0.2),
        at("column", -0.3, -0.62, 0.2, 0), at("column", 0.3, -0.62, 0.2, 180), sgn("pointing", 90, 0.74, 0.3)],
       expect={"element": "water", "manifest": "wand"},
-      effect="A pen of water follows the cursor and draws lines of water in the air."),
+      effect="A pen of water follows the cursor and draws lines of water in the air. Round the sigil of an element with matter of its own the pen draws with that matter."),
     S("water_bolt", "Water Bolt Volley", "Water Bolt (Ch. 24)", "Water Bolt", "Water_bolt_spell_redraw.png", WATER,
       [sig("water", 0, 0.6, 0.44, 90)] + [at("pierce", x, y, 0.72, 90) for x, y in ((-0.58, 0.06), (-0.3, -0.06), (0, -0.2), (0.3, -0.06), (0.58, 0.06))]
       + [at("regions", x, y, 0.16, 90) for x, y in ((-0.28, -0.62), (0.28, -0.62), (-0.8, -0.18), (0.8, -0.18))],
       expect={"element": "water", "behaviors": {"pierce"}},
-      effect="Five water bolts pierce enemies through; the regions signs face one way and lead them aside."),
+      effect="Five water bolts pierce enemies through; the regions signs face one way and lead them aside. Round another element's sigil it is of that element."),
     S("water_bolt_27", "Great Water Bolt", "Water Bolt (Ch. 27/83)", "Water Bolt", "Water_Bolt_Seal_Redraw_(Ch_27).png", WATER,
       [layer(0.82), sig("water", 0, -0.12, 0.42)] + [at("sights", 0, -0.82, 0.34, 90), at("sights", -0.64, -0.64, 0.34, 45), at("sights", 0.64, -0.64, 0.34, 135)]
       + [sgn("convergence", 250, 0.6, 0.16), sgn("convergence", 290, 0.6, 0.16)]
@@ -495,7 +501,7 @@ SPELLS = [
       + [at("pierce", 0, 0.52, 0.44, 90), sgn("regions", 130, 0.62, 0.16), sgn("regions", 50, 0.62, 0.16)],
       expect={"element": "ice", "behaviors": {"aim", "strong"}},
       cast={"element": "ice", "form": "column", "b+": {"aim": 1, "pierce": 1, "strong": 1}},
-       effect="One heavy ice bolt flies straight to the aim point and pierces the enemy."),
+       effect="One heavy ice bolt flies straight to the aim point and pierces the enemy. Round another element's sigil the bolt is of that element, compressed: round fire, plasma.", takes="any"),
     S("water_bolt_archives", "Threefold Water Bolt", "Water Bolt (Archives)", "Water Bolt", "Water_Bolt_Seal_Redraw_(3).png", WATER,
       [layer(0.82), sig("water", 0, -0.12, 0.42)] + [at("sights", 0, -0.82, 0.34, 90), at("sights", -0.64, -0.64, 0.34, 45), at("sights", 0.64, -0.64, 0.34, 135)]
       + [sgn("convergence", 250, 0.6, 0.16), sgn("convergence", 290, 0.6, 0.16)]
@@ -504,7 +510,7 @@ SPELLS = [
          sgn("regions", 140, 0.66, 0.16), sgn("regions", 40, 0.66, 0.16)],
       expect={"element": "ice", "behaviors": {"aim", "pierce"}},
       cast={"element": "ice", "form": "column", "b+": {"aim": 1, "pierce": 3, "strong": 1}},
-       effect="Three ice bolts fly to the aim point."),
+       effect="Three ice bolts fly to the aim point. Round another element's sigil the bolts are of that element, compressed: round fire, plasma.", takes="any"),
     S("rising_platform", "Rising Platform of Water", "Rising Platform of Water", "Rising Platform of Water", "Rising_Platform_of_Water_Redraw.png", WATER,
       [sig("water", 0, 0, 0.56)] + [sgn("levitation", a, 0.7, 0.3, "in", 75) for a in (275, 5, 95, 185)] + around("column", D4, 0.66, 0.16, "out"),
       expect={"element": "water"}, manifest="geyser",
@@ -521,7 +527,7 @@ SPELLS = [
       [sig("water", 0, 0.12, 0.34), sig("horse", 0, -0.46, 0.46), at("column", -0.6, -0.6, 0.22, 0), at("column", 0.6, -0.6, 0.22, 180),
        at("mimicry", -0.66, 0.12, 0.44, -90), at("mimicry", 0.66, 0.12, 0.44, -90), at("regions", -0.2, 0.66, 0.14, -90), at("regions", 0.2, 0.66, 0.14, -90)],
       expect={"element": "water", "shape": "horse"},
-      effect="A horse of water gallops over the ground where the witch aims and knocks enemies off their feet."),
+      effect="A horse of water gallops over the ground where the witch aims and knocks enemies off their feet. Round another element's sigil it is of that element."),
     S("water_orb", "Water Orb", "Water Orb", "Water Orb", "Water_Orb_Seal_Redraw.png", WATER,
       [sig("water", 0, 0, 0.44, 180), sgn("column", 180, 0.74, 0.3), sgn("column", 0, 0.74, 0.3)] + around("orb", D4, 0.66, 0.26),
       expect={"element": "water", "behaviors": {"contain"}},
@@ -558,13 +564,13 @@ SPELLS = [
       [frame("dancing", 1.25), sig("water", 0, 0, 0.36)],
       expect={"element": "water", "manifest": "puppet"}, status="interpreted",
       note="The seal is not shown; modeled on the Flying Puppet of Diversion, but with water.",
-      effect="A big puppet of water darts about at the target - enemies rush at it."),
+      effect="A big puppet of water darts about at the target - enemies rush at it. Round another element's sigil it is of that element.", takes="any"),
     # ------------------------------------------------------------ earth
     S("wall_breaker", "Wall Breaker", "Wall Breaker Seal", "Wall Breaker Seal", "Wall_Breaker_Redraw.png", EARTH,
       [sig("earth", 0, 0, 0.8), sgn("column", 180, 0.74, 0.32), sgn("column", 0, 0.74, 0.32),
        sgn("crush", 270, 0.64, 0.3), sgn("crush", 90, 0.64, 0.3)],
       expect={"element": "earth", "form": "column", "behaviors": {"crush"}},
-      effect="The projectile drills through rock and earth, turning stone and soil into sand."),
+      effect="The projectile drills through rock and earth, turning stone and soil into sand. Round another element's sigil it is of that element."),
     S("integration", "Integration", "Integration", "Integration", "Integration_Redraw.png", EARTH,
       [sig("earth", 0, 0, 0.65), sgn("crush", 270, 0.66, 0.24, "out"), sgn("crush", 90, 0.66, 0.24, "out")]
       + [sgn("crush", a, 0.66, 0.2, "out") for a in D4],
@@ -576,7 +582,7 @@ SPELLS = [
     S("boulder_stretch", "Boulder Stretch Rope", "Boulder Stretch Rope", "Boulder Stretch Rope", "Boulder_Stretch_Rope_Redraw.png", EARTH,
       [frame("weave", 1.35, 180), sig("earth", 0, 0.04, 0.71)],
       expect={"element": "earth", "manifest": "ribbon"},
-      effect="Stone by the witch stretches into a flexible ribbon towards the cursor - a bridge over a chasm."),
+      effect="Stone by the witch stretches into a flexible ribbon towards the cursor - a bridge over a chasm. Round another element's sigil it is of that element."),
     S("sand_cage", "Sand Cage", "Sand Cage", "Sand Cage", "Sand_Cage_Redraw.png", EARTH,
       traced=True, manifest="sand_cage",
       effect="Thick panels of sand wind up around the enemy at the cursor to a point over its head and harden - a cage."),
@@ -600,11 +606,11 @@ SPELLS = [
     S("flying_puppet", "Flying Puppet of Diversion", "Flying Puppet of Diversion", "Flying Puppet of Diversion", "Flying_Puppet_of_Diversion_Redraw.png", WIND,
       [frame("dancing", 1.3), sig("wind", 0, 0, 0.36)],
       expect={"element": "wind", "manifest": "puppet"},
-      effect="A cloak puppet darts about in the air at the target: enemies chase it, light items around fly up."),
+      effect="A cloak puppet darts about in the air at the target: enemies chase it, light items around fly up. Round another element's sigil it is of that element."),
     S("grasping_wind", "Grasping Wind", "Grasping Wind", "Grasping Wind", "Grasping_Wind_Redraw.png", WIND,
       [sig("wind", 0, 0, 0.5)] + around("pull", D4, 0.72, 0.3),
       expect={"element": "wind", "behaviors": {"pull"}}, cast={"form": "field"},  # a whirl round the witch, not a splash
-      effect="A whirlwind draws items, gold and enemies to the witch. The angled pulling signs twist it into a funnel."),
+      effect="A whirlwind draws items, gold and enemies to the witch. The angled pulling signs twist it into a funnel. Round another element's sigil it is of that element.", takes="any"),
     S("river_ferry", "River Ferry", "River Ferry Seal", "River Ferry Seal", "River_Ferry_Seal_Redraw.png", WIND,
       [sig("wind", 0, 0, 0.3)] + around("levitation", [270, 330, 30, 90, 150, 210], 0.72, 0.3) + around("stability", [300, 0, 60, 120, 180, 240], 0.78, 0.16),
       expect={"element": "wind", "behaviors": {"float"}}, manifest="gale",
@@ -654,7 +660,7 @@ SPELLS = [
       [frame("weave", 1.35, 180), sig("crystal", 0, 0.04, 0.46)],
       expect={"element": "crystal", "manifest": "ribbon"}, status="interpreted",
       note="The seal is not shown; the wiki: it works like the Boulder Stretch Rope, but with crystal.",
-      effect="A sparkling ribbon of crystal stretches from the witch to the cursor - a bridge that shimmers like a rainbow."),
+      effect="A sparkling ribbon of crystal stretches from the witch to the cursor - a bridge that shimmers like a rainbow. Round another element's sigil it is of that element."),
     S("crystal_shard", "Crystal Shard", "Crystal Shard", "Crystal Shard", "Crystal_Shard_Seal_Redraw.png", CRYSTAL,
       [sig("crystal", 0, 0, 0.44)] + around("column", C4, 0.62, 0.22, "out"),
       expect={"element": "crystal", "form": "dispersion"},
@@ -702,23 +708,23 @@ SPELLS = [
       [sig("smoke", 0, 0.42, 0.34), sig("dragon", 0, -0.2, 0.6)] + around("levitation", [200, 340], 0.72, 0.24),
       expect={"element": "smoke", "shape": "dragon"}, status="interpreted",
       note="The seal is only partly visible; here - smoke and the decorative dragon sigil.",
-      effect="A dragon of smoke flies roaring over enemies and frightens them."),
+      effect="A dragon of smoke flies roaring over enemies and frightens them. Round another element's sigil it is of that element."),
     S("watersculpture", "Watersculpture", "Watersculpture", "Watersculpture", "32_14_Flipperfoal_Watersculpture.png", SCULPT,
       [sig("water", 0, 0.34, 0.34), sig("horse", 0, -0.3, 0.52)],
       expect={"element": "water", "shape": "horse"}, status="interpreted",
       note="There is no general watersculpture seal: water and a creature's decorative sigil.",
       cast={"element": "water"},
-       effect="A foal of water gallops over the ground and knocks enemies down."),
+       effect="A foal of water gallops over the ground and knocks enemies down. Round another element's sigil it is of that element."),
     S("flying_watersculptures", "Flying Watersculptures", "Flying Watersculptures", "Flying Watersculptures", "62_9_Agott_Watersculptures_(Cropped).png", SCULPT,
       [sig("water", 0, 0, 0.36), sig("fish", -0.5, -0.4, 0.34), sig("bird", 0.5, -0.4, 0.34), sgn("purify", 150, 0.62, 0.2), sgn("purify", 30, 0.62, 0.2)],
       expect={"element": "water", "shape": "fish"}, status="interpreted",
       note="The seal on the cauldron is not visible; water, fish and bird over the Purify seal.",
-      effect="A flock of fish and birds of water flies to the enemies at the cursor and drenches them."),
+      effect="A flock of fish and birds of water flies to the enemies at the cursor and drenches them. Round another element's sigil it is of that element.", takes="any"),
     S("torchstag", "Torchstag", "Torchstag Spell", "Torchstag Spell", "62.5_10_Torchstag_Spell_(2).png", SCULPT,
       [sig("fire", 0, 0.38, 0.36), sig("torchstag", 0, -0.28, 0.6)] + around("mimicry", [180, 0], 0.72, 0.3),
       expect={"element": "fire", "shape": "torchstag"}, status="interpreted",
       note="The partially visible seal is reconstructed with fire, the actual decorative torchstag sigil and mimicry.",
-      effect="Fiery stags rush over the ground towards the aim point, setting fire to everything in their way."),
+      effect="Fiery stags rush over the ground towards the aim point, setting fire to everything in their way. Round another element's sigil it is of that element.", takes="any"),
     # ------------------------------------------------------------ spatial
     S("windowway", "Windowway", "Windowway Seal", "Windowway Seal", "Windowway_Spell_Redraw_Ch._28.png", SPACE,
       [layer(0.8), band(28, 0.8), layer(0.72)],
@@ -787,7 +793,7 @@ SPELLS = [
       + [link(1.5, 0.1, 0.42, sig("fire", 0, 0.05, 0.5), sgn("dispersion", 270, 0.66, 0.3), sgn("dispersion", 30, 0.66, 0.3), sgn("dispersion", 150, 0.66, 0.3))],
       expect={"element": "water", "shape": "dragon"}, manifest="dragon_steam", status="interpreted",
       note="Ring of Fire and Water Dragon merged: linked seals.",
-      effect="A dragon of boiling water: it scalds everyone in its way with steam."),
+      effect="A dragon of boiling water: it scalds everyone in its way with steam. Round another element's sigil it is of that element."),
     # ------------------------------------------------------------ niche
     S("forbidden_glow", "Forbidden Glow", "Forbidden Glow", "Forbidden Glow", "Forbidden_Glow_Redraw.png", NICHE,
       [sig("flicker", 0, 0, 0.32)] + around("column", C8, 0.74, 0.18),
@@ -857,7 +863,7 @@ SPELLS = [
       [sig("earth", 0, 0, 0.63)] + around("pointing", C8, 0.7, 0.2, "out") + around("column", D4, 0.7, 0.16, "out"),
       expect={"element": "earth"}, manifest="spikes", status="interpreted",
       note="The seal is not shown; earth, pointing signs and inverted columns.",
-      effect="Stone spikes burst out of the ground at the target and fly off in every direction."),
+      effect="Stone spikes burst out of the ground at the target and fly off in every direction. Round another element's sigil it is of that element.", takes="any"),
     S("wallwarding", "Wallwarding", "Wallwarding Seal", "Wallwarding Seal", "Wallwarding_Effect.png", NICHE,
       [sig("earth", 0, 0, 0.63)] + around("pull", C8, 0.7, 0.2, "out"),
       expect={"element": "earth", "behaviors": {"push"}}, manifest="wallward", status="interpreted",

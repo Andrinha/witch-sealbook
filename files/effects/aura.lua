@@ -85,11 +85,13 @@ MODES.pour = function( e, p, age )
 	EntitySetTransform( e, ox, oy )
 	effect_loop( e, true, "data/audio/Desktop/materials.bank", "materials/spray_potion" )
 	local speed = ( 90 + 60 * far ) * math.min( 1.5, math.max( 0.7, p.power or 1 ) )
+	-- (Watershot round another element's sigil pours that element's matter: manifest.lua)
+	local material = effect_text( p.material ) ~= "" and p.material or "water"
 	for i = 1, p.cells or 4 do
-		GameCreateParticle( "water", ox + Random( -1, 1 ), oy + Random( -1, 1 ), 1,
+		GameCreateParticle( material, ox + Random( -1, 1 ), oy + Random( -1, 1 ), 1,
 			dx * speed + Random( -12, 12 ), dy * speed + Random( -12, 12 ), false, false, false )
 	end
-	if age % 3 == 0 then fx_dot( ox, oy, fx_color( "water", 0.7, 0.8 ), dx * speed * 0.6, dy * speed * 0.6, 0.2, 200 ) end
+	if age % 3 == 0 then fx_dot( ox, oy, effect_color( effect_text( p.element ) ~= "" and p.element or "water", 0.7, 0.8 ), dx * speed * 0.6, dy * speed * 0.6, 0.2, 200 ) end
 end
 
 -- Rising Platform: a column of water beats up under the caster and lifts them

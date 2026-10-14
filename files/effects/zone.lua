@@ -572,14 +572,16 @@ MODES.spikes = function( e, p, age, x, y )
 	if age == 0 then
 		local gx, gy = ground_below( x, y - 10, 80 )
 		gy = gy or y
-		local n = math.floor( 5 + 2 * ( p.power or 1 ) )
+		local n = math.floor( ( 5 + 2 * ( p.power or 1 ) ) * ( p.big or 1 ) ) -- Expansion: more of them
 		for i = 1, n do
 			local a = math.rad( -160 + 140 * ( i - 1 ) / ( n - 1 ) ) + Random( -10, 10 ) / 100
 			local sx, sy = x + math.cos( a ) * 4, gy - 3
-			local shard = EntityLoad( carrier_file( "stone", "bolt" ), sx, sy )
+			local shard = EntityLoad( carrier_file( effect_text( p.shard ) ~= "" and p.shard or "stone", "bolt" ), sx, sy )
 			GameShootProjectile( p.owner or 0, sx, sy, sx + math.cos( a ) * 100, sy + math.sin( a ) * 100, shard, true )
 		end
-		fx_material( "sand", x, gy - 3, 40, 6, 0, -60 )
+		-- (its element's matter: Spike round another element's sigil, manifest.lua)
+		local material = p.material == nil and "sand" or effect_text( p.material )
+		if material ~= "" then fx_material( material, x, gy - 3, 40, 6, 0, -60 ) end
 		effect_sound( "earth", x, gy )
 	end
 	done( e, p, age )

@@ -20,7 +20,9 @@ local ARC_OFF_RING = 0.15    -- an arc's mean radius may differ from the ring's 
 local MORE_ARCS_RING = 1.06 -- a ring of more strokes is the ring only when it is this much bigger than one of fewer
 local NOISE_SIZE = 3         -- a scribble smaller than this is a slip of the pen (a tap of it, a few points, is a dot) ...
 local SMALL_MARK = 2         -- ... unless a sign can't be read without it: then the marks over this are read too
-local INSIDE = 0.95          -- symbols must lie within this share of the radius
+local INSIDE = 0.95          -- symbols must lie within this share of the radius ...
+local BY_RING = 1.05         -- ... or a stroke of theirs by the ring line, its middle within this share, touching them ...
+local BY_RING_WITHIN = 0.5   -- ... and this share of its points inside the ring
 local LARGE_SIGIL = 1.0      -- a sigil this wide must lie almost entirely inside the ring
 local SIGIL_OUTSIDE_LIMIT = 0.1 -- share of its points allowed past the inner edge of the ring
 local CENTER_ZONE = 0.3      -- closer to the center a symbol has no reliable turn: sigils only ...
@@ -51,6 +53,8 @@ local RING_ZONE = 0.55       -- by the ring a sign ...
 local RING_MARGIN = 0.04     -- ... may be read this much worse than a sigil and still count
 local CIRCLE_ROUNDNESS = 0.1 -- rings inside the seal are drawn with care: a rounded square (Rain) isn't one
 local SIGIL_TURNED = 0.03    -- a sigil read turned on its side or upside down scores this much less
+local SIGHTS_LIKE = { column = true, levitation = true } -- a Sights Set drawn roughly reads as these ...
+local SIGHTS_TIE = 0.1       -- ... it is Sights Set read this much worse, its head and diamond seen
 -- symbols drawn around a circle: a circle with one of these inside is the symbol, not a seal in the seal
 local CIRCLE_SYMBOLS = { repetition = true, owlcat = true, obliviation = true, orb = true, immobility = true, guidance = true, underfoot = true,
 	solidify = true, unburning = true }
@@ -531,7 +535,7 @@ local SIGN_STROKES = { dispersion = { min = 2 }, levitation = { min = 2 }, pull 
 	reflection = { max = 4 }, envelop = { max = 3 } }
 -- the extra ways a sign is drawn (templates.lua) need all their strokes: levitation drawn as an arrow
 -- in two strokes would take in slanted columns, a short-based column in one stroke - any bare line
-local VARIANT_STROKES = { levitation = { min = 3 }, column = { min = 2 }, regions = { max = 1 } }
+local VARIANT_STROKES = { levitation = { min = 3 }, column = { min = 2 }, regions = { max = 1 }, sights = { min = 2 } }
 -- center symbols with many parts can't be drawn in one or two strokes
 local SIGIL_STROKES = { aeriforms = { min = 5 }, crystal = { min = 4 }, concealment = { min = 4 }, sand = { min = 3 },
 	undulation = { min = 3 }, calling = { min = 3 }, unburning = { min = 3 }, whorl = { min = 3 }, owlcat = { min = 3 },
@@ -770,6 +774,55 @@ function sign_pose( key, pose )
 	return false, t
 end
 
+-- The sign templates of one sign only, in every pose
+local key_sets = {}
+local function sign_set_of( key )
+	if not key_sets[key] then
+		local _, signs = template_sets()
+		local only = {}
+		for _, tpl in ipairs( signs ) do
+			if tpl.key == key then only[#only + 1] = tpl end
+		end
+		key_sets[key] = only
+	end
+	return key_sets[key]
+end
+
+-- How well strokes read as the sigil 'key' alone (0: not at all), as drawn
+local sigil_sets = {}
+local function sigil_score( strokes, key )
+	if not sigil_sets[key] then
+		local sigils = template_sets()
+		local only = {}
+		for _, tpl in ipairs( sigils ) do
+			if tpl.key == key then only[#only + 1] = tpl end
+		end
+		sigil_sets[key] = only
+	end
+	local m = recognizer_best( sigil_sets[key], strokes )
+	return m and m.score or 0
+end
+
+-- How many of five lines across a glyph, from a share 'from' to 'to' of its height down, cross its ink twice or more
+local function crossed( strokes, from, to )
+	local y0, y1 = math.huge, -math.huge
+	for _, s in ipairs( strokes ) do
+		for _, p in ipairs( s ) do y0, y1 = math.min( y0, p.y ), math.max( y1, p.y ) end
+	end
+	local lines = 0
+	for i = 0, 4 do
+		local y = y0 + ( y1 - y0 ) * ( from + ( to - from ) * i / 4 )
+		local n = 0
+		for _, s in ipairs( strokes ) do
+			for k = 2, #s do
+				if ( s[k - 1].y < y ) ~= ( s[k].y < y ) then n = n + 1 end
+			end
+		end
+		if n >= 2 then lines = lines + 1 end
+	end
+	return lines
+end
+
 -- One symbol: a sigil as drawn, or a sign in any pose, turned into its bottom-of-ring pose first (the
 -- center is up). The best score wins; signs usually face the center, so an inverted reading must be
 -- clearly better. A sign also tells if it is inverted, how far it is turned sideways ('turn', radians)
@@ -798,8 +851,18 @@ local function recognize_symbol_uncached( strokes, box, ring )
 		-- must be much clearer, since its direction there is ambiguous.
 		local margin = dist < CENTER_ZONE and ( spanning and SPAN_MARGIN or CENTER_SIGN_MARGIN )
 			or ( dist >= RING_ZONE and -RING_MARGIN or 0 )
-		local m = recognizer_best( signs, rotate( strokes, box.cx, box.cy, math.pi / 2 - angle ),
-			math.max( score + margin, SEAL_MIN_SCORE - INVERTED_MARGIN - 1e-9 ), true )
+		local pose = rotate( strokes, box.cx, box.cy, math.pi / 2 - angle )
+		local m = recognizer_best( signs, pose, math.max( score + margin, SEAL_MIN_SCORE - INVERTED_MARGIN - 1e-9 ), true )
+		-- Sights Set: hands draw its diamond small and its head narrow, and the sign reads as the arrow of a Column or of
+		-- Levitation; ink across both of its ends - the head and the diamond - tells it (the glyph stood upright as the
+		-- arrow it read as), when it reads about as well so
+		if m and SIGHTS_LIKE[m.key] then
+			local upright = rotate( pose, box.cx, box.cy, -m.template.tilt )
+			if crossed( upright, 0.07, 0.25 ) >= 2 and crossed( upright, 0.68, 0.84 ) >= 2 then
+				local sights = recognizer_best( sign_set_of( "sights" ), pose, m.score - SIGHTS_TIE )
+				if sights then m, sights.margin = sights, nil end
+			end
+		end
 		if m then
 			best = { kind = "sign", key = m.key, score = m.score, inverted = m.template.inverted, turn = m.template.turn,
 				mirror = m.template.mirror, dir = angle - math.pi + m.template.tilt, margin = m.margin }
@@ -864,20 +927,11 @@ end
 
 -- 'strokes' read as the sign 'key' only, in their place on the ring (a glyph read as its twin): its pose, turn and
 -- score as that sign, or nil when even that reads too badly
-local key_sets = {}
 local function read_as_sign( strokes, ring, key )
-	if not key_sets[key] then
-		local _, signs = template_sets()
-		local only = {}
-		for _, tpl in ipairs( signs ) do
-			if tpl.key == key then only[#only + 1] = tpl end
-		end
-		key_sets[key] = only
-	end
 	local box = bbox( strokes )
 	local dx, dy = box.cx - ring.x, box.cy - ring.y
 	local angle = math.atan2( dy, dx )
-	local m = recognizer_best( key_sets[key], rotate( strokes, box.cx, box.cy, math.pi / 2 - angle ), SEAL_MIN_SCORE )
+	local m = recognizer_best( sign_set_of( key ), rotate( strokes, box.cx, box.cy, math.pi / 2 - angle ), SEAL_MIN_SCORE )
 	if not m then return nil end
 	return { kind = "sign", key = key, score = m.score, inverted = m.template.inverted, turn = m.template.turn,
 		mirror = m.template.mirror, dir = angle - math.pi + m.template.tilt, margin = 1, twin = true, strokes = strokes,
@@ -1071,6 +1125,12 @@ function seal_parts( strokes, tree, entry )
 	local known = {}
 	for _, signature in ipairs( { entry and entry.symbols or "", entry and entry.recipe or "" } ) do
 		for key in signature:gmatch( "([%w_]+:[%w_]+)=" ) do known[key] = true end
+	end
+	-- a page whose magic takes another element (seal_canon.lua seal_page_takes): any element's sigil may be its own
+	if entry and entry.takes and seal_page_sigil and seal_page_sigil( entry ) then
+		for key, def in pairs( DICTIONARY_SIGILS ) do
+			if def.element and not def.manifest and not def.shape and not def.behavior then known["sigil:" .. key] = true end
+		end
 	end
 	local recipe = next( known ) ~= nil
 	local ring, ring_parts = find_ring( strokes )
@@ -1748,6 +1808,29 @@ local function parse_with( strokes, noise )
 			end
 		end
 	end
+	-- a sign drawn by the ring reaches it: the stroke of its tail lying by the ring line (Sights Set's diamond), touching the
+	-- rest of the sign, is the sign's and no mark outside - without it the sign's stem read as a Column
+	local grew = true
+	while grew do
+		grew = false
+		for k = #outside, 1, -1 do
+			local stroke = outside[k]
+			local b = bbox( { stroke } )
+			local within = 0
+			for _, p in ipairs( stroke ) do
+				if ( p.x - ring.x ) ^ 2 + ( p.y - ring.y ) ^ 2 <= ring.r * ring.r then within = within + 1 end
+			end
+			if ( b.cx - ring.x ) ^ 2 + ( b.cy - ring.y ) ^ 2 < ( ring.r * BY_RING ) ^ 2 and within >= BY_RING_WITHIN * #stroke then
+				for _, other in ipairs( inner ) do
+					if strokes_touch( stroke, other, math.max( TOUCH, 0.5 * b.size ) ) then
+						inner[#inner + 1] = table.remove( outside, k )
+						grew = true
+						break
+					end
+				end
+			end
+		end
+	end
 	local glaives, glaive_strokes = find_glaives( outside, ring )
 	seal.glaives = glaives
 	local inner_ink, outside_ink, stray_ink = 0, tiny_outside_ink, tiny_outside_ink
@@ -1981,5 +2064,6 @@ parse_inside = function( strokes, c )
 end
 
 -- What the seal's other files share with this one (seal_canon.lua, seal_spell.lua)
-SealRead = { find_ring = find_ring, bbox = bbox, recognize_symbol = recognize_symbol, clamp = clamp, round2 = round2,
+SealRead = { find_ring = find_ring, bbox = bbox, recognize_symbol = recognize_symbol, sigil_score = sigil_score, clamp = clamp,
+	round2 = round2,
 	MAX_ROUNDNESS = MAX_ROUNDNESS, STRONG_SIGIL = STRONG_SIGIL, SPAN = SPAN, FRAME_SCORE = FRAME_SCORE }

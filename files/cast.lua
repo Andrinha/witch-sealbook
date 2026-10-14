@@ -159,6 +159,11 @@ local function scale_size( projectile, k )
 		ComponentSetValue2( area, "aabb_min", -r, -r )
 		ComponentSetValue2( area, "aabb_max", r, r )
 	end
+	-- the sparks that mark a field's circle (its matter follows the damage area: behaviors/field.lua)
+	for _, emitter in ipairs( EntityGetComponentIncludingDisabled( projectile, "ParticleEmitterComponent" ) or {} ) do
+		local lo, hi = ComponentGetValue2( emitter, "area_circle_radius" )
+		if ( hi or 0 ) > 0 then ComponentSetValue2( emitter, "area_circle_radius", lo * k, hi * k ) end
+	end
 	for _, sprite in ipairs( EntityGetComponentIncludingDisabled( projectile, "SpriteComponent" ) or {} ) do
 		ComponentSetValue2( sprite, "has_special_scale", true )
 		ComponentSetValue2( sprite, "special_scale_x", k )
@@ -735,6 +740,39 @@ end
 KIT = { spawn = spawn, raw = spawn_raw, add_script = add_script, add_var = add_var, add_death_script = add_death_script,
 	convert = convert, scale_size = scale_size, place = place }
 
+-- A long shot of an element (Flame Shot drawn round its sigil, manifest.lua M.flame_shot): its shots leave the hand
+-- together, one after another a little slower, so the line stretches out as it flies far ahead - as Flame Shot's beam of
+-- flame does; each strikes for a share of a shot. An element the game casts (Vacuum's black hole) is one of the game's.
+LONG_SHOT = { shots = 6, speed = 360, slower = 0.07, damage = 0.45 }
+function cast_long_shot( ctx )
+	local spell = ctx.spell
+	local own = DICTIONARY_LOOKS[spell.element] and carrier_file( spell.element, "bolt" )
+	local effect = own and { file = own, carrier = "bolt" } or dictionary_effect( spell.element, "column" )
+	if not effect then return nil end
+	local x, y = ctx.x + ctx.aim_x * HAND_OFFSET, ctx.y + ctx.aim_y * HAND_OFFSET
+	local made = {}
+	for i = 0, own and LONG_SHOT.shots - 1 or 0 do
+		local e = spawn( ctx, effect.file, x, y, ctx.aim_x, ctx.aim_y, spell, effect )
+		if own then
+			local speed = ( LONG_SHOT.speed + 35 * math.min( 2, spell.range or 0 ) ) * ( 1 - LONG_SHOT.slower * i )
+			local velocity = EntityGetFirstComponentIncludingDisabled( e, "VelocityComponent" )
+			if velocity then ComponentSetValue2( velocity, "mVelocity", ctx.aim_x * speed, ctx.aim_y * speed ) end
+			-- a share of a shot: its damage of every kind and its blast's
+			local proj = EntityGetFirstComponentIncludingDisabled( e, "ProjectileComponent" )
+			if proj then
+				ComponentSetValue2( proj, "damage", ComponentGetValue2( proj, "damage" ) * LONG_SHOT.damage )
+				for kind in pairs( DICTIONARY_LOOKS[spell.element].damage or {} ) do
+					ComponentObjectSetValue2( proj, "damage_by_type", kind, ComponentObjectGetValue2( proj, "damage_by_type", kind ) * LONG_SHOT.damage )
+				end
+				ComponentObjectSetValue2( proj, "config_explosion", "damage",
+					( ComponentObjectGetValue2( proj, "config_explosion", "damage" ) or 0 ) * LONG_SHOT.damage )
+			end
+		end
+		made[#made + 1] = e
+	end
+	return made
+end
+
 -- A spell of an element in a form: its carriers from the hand, around the caster or at the cursor; a resonance that
 -- makes magic of its own in their place
 local function cast_form( ctx )
@@ -801,6 +839,32 @@ local function cast_form( ctx )
 		cast[#cast + 1] = effect.file
 	end
 	return cast
+end
+
+-- A wiki's page drawn round another element's sigil (seal_canon.lua seal_page_takes) whose magic is that element's own
+-- in a form: Pyreball round water is an orb of water hanging at the cursor (manifest.lua)
+function cast_in_form( ctx, form, floats )
+	local spell = ctx.spell
+	local was = { spell.form, spell.floats, spell.manifest }
+	spell.form, spell.floats, spell.manifest = form, floats, nil
+	local made = cast_form( ctx )
+	spell.form, spell.floats, spell.manifest = was[1], was[2], was[3]
+	return made
+end
+
+-- Flame Burst round another element's sigil: a shot of that element that bursts into its wave where it ends - against
+-- whatever it hits, or at the end of its flight (behaviors/burst_on_hit.lua, effects/nova.lua)
+function cast_burst_shot( ctx )
+	local spell = ctx.spell
+	if not DICTIONARY_LOOKS[spell.element] then return cast_in_form( ctx, "column" ) end
+	local file = carrier_file( spell.element, "bolt" )
+	local e = spawn( ctx, file, ctx.x + ctx.aim_x * HAND_OFFSET, ctx.y + ctx.aim_y * HAND_OFFSET, ctx.aim_x, ctx.aim_y, spell,
+		{ file = file, carrier = "bolt" } )
+	add_var( e, "witch_burst_element", spell.element )
+	add_var( e, "witch_burst_r", MANIFEST_SCALE.size( ctx, 48 ) )
+	add_var( e, "witch_burst_damage", ( 0.35 + 0.25 * ( spell.force or 0 ) ) * ctx.power )
+	add_death_script( e, "burst_on_hit.lua" )
+	return { e }
 end
 
 -- The forbidden: magic on the body. The Knights Moralis come for whoever casts it (Stevari, the Holy Mountain's
