@@ -11,7 +11,7 @@ Open the spellbook and draw a seal: a [b]ring[/b], an [b]element sigil[/b] in th
 [img]https://raw.githubusercontent.com/Andrinha/witch-sealbook/main/docs/flame_shot.gif[/img]
 
 [h2]Marking signs[/h2]
-If the book misreads a sign, you can name it yourself. Press [b]Mark[/b] in the ink panel, circle the lines and pick what they are from the list. The list shows the most likely readings and how closely each one matches your drawing. A seal made from a weak match may misfire, so a careful drawing still pays off. To clear a mark, click the marked lines and choose &quot;As the book reads it&quot;.
+If the book misreads a sign, you can select it and choose one from a dropdown list. The list shows the most likely readings and how closely each one matches your drawing. To clear a mark, click the marked lines and choose 'As the book reads it'.
 
 [img]https://raw.githubusercontent.com/Andrinha/witch-sealbook/main/docs/mark.gif[/img]
 
@@ -22,7 +22,6 @@ If the book misreads a sign, you can name it yourself. Press [b]Mark[/b] in the 
 [*]Every element has a [b]nature[/b]: wind passes through enemies, earth bounces, light flares, water puts out fire, smoke blinds
 [*][b]Seven inks[/b] that change how a seal behaves
 [*][b]Three books[/b], from a small Palm Quire to the Great Tome
-[*][b]Mark tool[/b]: circle a misread sign and tell the book what it is
 [/list]
 
 [h2]Notes[/h2]
