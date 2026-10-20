@@ -1,6 +1,6 @@
--- A drawing as the books keep it: strokes { { x = , y = }, ..., ink = key (ink.lua INKS) }, and the text they are
--- saved as - on a book's pages (book_store.lua), for the book in hand to light up in the air (cast.lua) and in the
--- records of recognized drawings (notebook.lua).
+-- A drawing as the books keep it: strokes { { x = , y = }, ..., ink = key (ink.lua INKS), mark (seal.lua) }, and the
+-- text they are saved as - on a book's pages (book_store.lua), for the book in hand to light up in the air (cast.lua)
+-- and in the records of recognized drawings (notebook.lua).
 
 -- strokes <-> "x,y x,y|x,y ..."
 function strokes_encode( list )
@@ -44,12 +44,45 @@ function strokes_apply_inks( list, text )
 	return list
 end
 
+-- the strokes marked as symbols (seal.lua: stroke.mark = { kind, key }, one table for all the strokes of one symbol) <->
+-- "sign:light@1,2;sigil:fire@3": each mark with the strokes it holds
+function strokes_encode_marks( list )
+	local marks, of = {}, {}
+	for i, stroke in ipairs( list ) do
+		local mark = stroke.mark
+		if mark then
+			if not of[mark] then
+				of[mark] = { mark.kind .. ":" .. mark.key }
+				marks[#marks + 1] = of[mark]
+			end
+			table.insert( of[mark], i )
+		end
+	end
+	local parts = {}
+	for k, ids in ipairs( marks ) do parts[k] = table.remove( ids, 1 ) .. "@" .. table.concat( ids, "," ) end
+	return table.concat( parts, ";" )
+end
+
+function strokes_apply_marks( list, text )
+	for item in ( text or "" ):gmatch( "[^;]+" ) do
+		local kind, key, ids = item:match( "^(%a+):([%w_]+)@([%d,]+)$" )
+		if kind then
+			local mark = { kind = kind, key = key }
+			for i in ids:gmatch( "%d+" ) do
+				local stroke = list[tonumber( i )]
+				if stroke then stroke.mark = mark end
+			end
+		end
+	end
+	return list
+end
+
 -- A seal's page keeps a lighter copy of the strokes: 2x2 ink dots 1.5 apart still make a solid line
 function strokes_thin( list, step )
 	local out = {}
 	local min = ( step or 1.5 ) ^ 2
 	for _, stroke in ipairs( list ) do
-		local kept = { stroke[1], ink = stroke.ink }
+		local kept = { stroke[1], ink = stroke.ink, mark = stroke.mark }
 		for k = 2, #stroke do
 			local p, last = stroke[k], kept[#kept]
 			if k == #stroke or ( p.x - last.x ) ^ 2 + ( p.y - last.y ) ^ 2 >= min then kept[#kept + 1] = p end
@@ -64,7 +97,7 @@ end
 function strokes_even( list, step )
 	local out = {}
 	for _, stroke in ipairs( list ) do
-		local line = { stroke[1], ink = stroke.ink }
+		local line = { stroke[1], ink = stroke.ink, mark = stroke.mark }
 		for k = 2, #stroke do
 			local a, b = stroke[k - 1], stroke[k]
 			local n = math.max( 1, math.ceil( math.sqrt( ( b.x - a.x ) ^ 2 + ( b.y - a.y ) ^ 2 ) / step ) )

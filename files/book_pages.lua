@@ -310,6 +310,26 @@ local function list_page( s, page )
 	if page.footer then note( s, size / 2, 157, page.footer, P.NOTE_COLOR ) end
 end
 
+-- A symbol's picture in the fine pen, 'k' big around cx, cy, turned by 'turn' radians and mirrored if 'mirror' (the
+-- readings of a circled sign, notebook.lua)
+function P.glyph( s, kind, key, cx, cy, k, turn, mirror, color, z )
+	local templates = TEMPLATES_OF[kind] and _G[TEMPLATES_OF[kind]]
+	local template = templates and templates[key] and templates[key][1]
+	if not template then return end
+	if mirror then
+		local flipped = {}
+		for i, stroke in ipairs( template ) do
+			flipped[i] = {}
+			for j, pt in ipairs( stroke ) do flipped[i][j] = { 1 - pt[1], pt[2] } end
+		end
+		template = flipped
+	end
+	local pen = s.pen
+	s.pen = SKETCH_PEN
+	D.strokes( s, template_strokes( template, cx, cy, k, turn ), function() return color, 1 end, nil, z )
+	s.pen = pen
+end
+
 -- The element sigils, each drawn big in its color, its name under it
 local function elements_page( s, rows )
 	heading( s, 6, "The element sigils", P.TITLE_COLOR )

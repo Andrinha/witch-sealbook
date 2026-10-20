@@ -4,12 +4,13 @@
 --   seals: the finished pages and the unfinished drafts (draft = "1"), a page each - what SEAL_FIELDS names
 --   blank, blank_next: the pair of empty pages after them; edit, edit_face: the page being drawn on
 --   active, active_wiki: the seal the book casts; spread, own_spread, wiki_spread: where it lies open
--- Strokes are kept as text (strokes.lua); a sheet's page keeps only its seal's key, its drawing is the grimoire's.
+-- Strokes are kept as text (strokes.lua), their inks and marks beside them; a sheet's page keeps only its seal's key, its
+-- drawing is the grimoire's.
 
 BookStore = {}
 local S = BookStore
 
-local SEAL_FIELDS = { "spell", "name", "quality", "color", "strokes", "inks", "sheet", "tier", "fresh", "draft" }
+local SEAL_FIELDS = { "spell", "name", "quality", "color", "strokes", "inks", "marks", "sheet", "tier", "fresh", "draft" }
 local shelf = {}        -- the witch's books: key -> state
 local wiki_strokes = {} -- lighter copies of the grimoire's pages, made when first shown
 
@@ -34,9 +35,11 @@ end
 function S.save_page( st )
 	GlobalsSetValue( book_var( st.key, "page" ), strokes_encode( st.blank.strokes ) )
 	GlobalsSetValue( book_var( st.key, "page_inks" ), strokes_encode_inks( st.blank.strokes ) )
+	GlobalsSetValue( book_var( st.key, "page_marks" ), strokes_encode_marks( st.blank.strokes ) )
 	GlobalsSetValue( book_var( st.key, "page_failed" ), st.blank.failed and "1" or "" )
 	GlobalsSetValue( book_var( st.key, "page_2" ), strokes_encode( st.blank_next.strokes ) )
 	GlobalsSetValue( book_var( st.key, "page_2_inks" ), strokes_encode_inks( st.blank_next.strokes ) )
+	GlobalsSetValue( book_var( st.key, "page_2_marks" ), strokes_encode_marks( st.blank_next.strokes ) )
 end
 
 function S.save_seal( st, i )
@@ -44,6 +47,7 @@ function S.save_seal( st, i )
 		local value = st.seals[i] and st.seals[i][field] or ""
 		if field == "strokes" and st.seals[i] then value = st.seals[i].sheet ~= "" and "" or strokes_encode( value ) end
 		if field == "inks" and st.seals[i] and st.seals[i].draft == "1" then value = strokes_encode_inks( st.seals[i].strokes ) end
+		if field == "marks" and st.seals[i] then value = st.seals[i].sheet ~= "" and "" or strokes_encode_marks( st.seals[i].strokes ) end
 		GlobalsSetValue( S.seal_var( st, i, field ), tostring( value ) )
 	end
 end
@@ -54,7 +58,7 @@ function S.load_seal_strokes( seal )
 	if entry then
 		seal.strokes = S.wiki_page_strokes( entry )
 	else
-		seal.strokes = strokes_apply_inks( strokes_decode( seal.strokes ), seal.inks )
+		seal.strokes = strokes_apply_marks( strokes_apply_inks( strokes_decode( seal.strokes ), seal.inks ), seal.marks )
 	end
 end
 
@@ -62,15 +66,39 @@ end
 function S.load( key )
 	if shelf[key] then return shelf[key] end
 	local st = { key = key, def = BOOKS[key], look = BOOK_LOOKS[key], seals = {} }
-	st.blank = { strokes = strokes_apply_inks( strokes_decode( GlobalsGetValue( book_var( key, "page" ), "" ) ), GlobalsGetValue( book_var( key, "page_inks" ), "" ) ) }
+	local function page_strokes( name )
+		local list = strokes_apply_inks( strokes_decode( GlobalsGetValue( book_var( key, name ), "" ) ), GlobalsGetValue( book_var( key, name .. "_inks" ), "" ) )
+		return strokes_apply_marks( list, GlobalsGetValue( book_var( key, name .. "_marks" ), "" ) )
+	end
+	st.blank = { strokes = page_strokes( "page" ) }
 	-- Older saves have no failure flag; a closed ring left on the blank page was a failed attempt.
 	st.blank.failed = #st.blank.strokes > 0 and ( GlobalsGetValue( book_var( key, "page_failed" ), "" ) == "1" or seal_ring_closed( st.blank.strokes ) )
 	st.blank.point_count = 0
 	for _, stroke in ipairs( st.blank.strokes ) do st.blank.point_count = st.blank.point_count + #stroke end
-	st.blank_next = { strokes = strokes_apply_inks( strokes_decode( GlobalsGetValue( book_var( key, "page_2" ), "" ) ), GlobalsGetValue( book_var( key, "page_2_inks" ), "" ) ), point_count = 0, failed = false }
+	st.blank_next = { strokes = page_strokes( "page_2" ), point_count = 0, failed = false }
 	for _, stroke in ipairs( st.blank_next.strokes ) do st.blank_next.point_count = st.blank_next.point_count + #stroke end
 	st.blank_next.failed = st.blank_next.point_count > 0 and seal_ring_closed( st.blank_next.strokes )
-	for i = 1, tonumber( GlobalsGetValue( book_var( key, "seals" ), "0" ) ) or 0 do
+	-- Until 2026-10-21 a seal awakening on an earlier page (one edited again) set the count of pages to its own: the pages
+	-- after it were lost to the next session, but kept. A page past the count with anything on it - a seal, a sheet, a
+	-- draft (even an empty one: the pages after it may hold seals) - is one of them, up to the last that holds something;
+	-- a page torn out is emptied.
+	local count = tonumber( GlobalsGetValue( book_var( key, "seals" ), "0" ) ) or 0
+	local function has( i, fields )
+		for _, field in ipairs( fields ) do
+			if GlobalsGetValue( S.seal_var( st, i, field ), "" ) ~= "" then return true end
+		end
+		return false
+	end
+	local last, n = count, count + 1
+	while has( n, { "spell", "strokes", "sheet", "draft" } ) do
+		if has( n, { "spell", "strokes", "sheet" } ) then last = n end
+		n = n + 1
+	end
+	if last > count then
+		count = last
+		GlobalsSetValue( book_var( key, "seals" ), tostring( count ) )
+	end
+	for i = 1, count do
 		local seal = {}
 		for _, field in ipairs( SEAL_FIELDS ) do seal[field] = GlobalsGetValue( S.seal_var( st, i, field ), "" ) end
 		S.load_seal_strokes( seal )
@@ -94,10 +122,9 @@ function S.load( key )
 		st.blank = { strokes = {}, point_count = 0, failed = false }
 		st.blank_next = { strokes = {}, point_count = 0, failed = false }
 		GlobalsSetValue( book_var( key, "page" ), "" )
-		GlobalsSetValue( book_var( key, "page_inks" ), "" )
-		GlobalsSetValue( book_var( key, "page_failed" ), "" )
-		GlobalsSetValue( book_var( key, "page_2" ), "" )
-		GlobalsSetValue( book_var( key, "page_2_inks" ), "" )
+		for _, name in ipairs( { "page_inks", "page_marks", "page_failed", "page_2", "page_2_inks", "page_2_marks" } ) do
+			GlobalsSetValue( book_var( key, name ), "" )
+		end
 		st.edit, st.edit_face = st.seals[edited], st.def.intro + edited
 	else
 		st.edit, st.edit_face = st.blank, st.def.intro + #st.seals + 1

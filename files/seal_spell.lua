@@ -49,11 +49,11 @@ local function trouble( seal, symbols )
 		for _, stroke in ipairs( symbol.strokes or {} ) do seal.trouble[#seal.trouble + 1] = stroke end
 	end
 end
--- ... the weak half of them
+-- ... the weak half of them (but those the witch marked: she said what they are)
 local function weak_symbols( seal )
 	local weak = {}
 	for _, symbol in ipairs( seal.symbols ) do
-		if symbol.score < ( SEAL_MIN_SCORE + SEAL_GOOD_SCORE ) / 2 then weak[#weak + 1] = symbol end
+		if symbol.score < ( SEAL_MIN_SCORE + SEAL_GOOD_SCORE ) / 2 and not symbol.marked then weak[#weak + 1] = symbol end
 	end
 	return weak
 end
@@ -96,7 +96,7 @@ function compile_spell( seal )
 		local strong = false
 		for _, symbol in ipairs( specials ) do
 			local least = DICTIONARY_SIGILS[symbol.key].shape and SCULPTURE_ONLY_MIN_SCORE or SPECIAL_ONLY_MIN_SCORE
-			if symbol.score >= least then strong = true; break end
+			if symbol.score >= least or symbol.marked then strong = true; break end
 		end
 		if not strong then
 			trouble( seal, specials )
@@ -319,17 +319,23 @@ function compile_spell( seal )
 	local ring_quality = clamp( 1 - seal.ring.roundness / MAX_ROUNDNESS, 0, 1 )
 	local precision = ring_quality
 	local count = #seal.symbols + ( frame and 1 or 0 )
-	local symbol_quality = 1 -- an empty ring has no symbols to validate
+	-- how cleanly the symbols are drawn; and as the seal is checked by: a symbol the witch marked (seal.lua) is no
+	-- reason to reject it, it only makes it less precise (below)
+	local symbol_quality, checked_quality = 1, 1 -- an empty ring has no symbols to validate
 	if count > 0 then
-		local q = 0
+		local q, checked = 0, 0
 		for _, symbol in ipairs( seal.symbols ) do
-			q = q + clamp( ( symbol.score - SEAL_MIN_SCORE ) / ( SEAL_GOOD_SCORE - SEAL_MIN_SCORE ), 0, 1 )
+			local one = clamp( ( symbol.score - SEAL_MIN_SCORE ) / ( SEAL_GOOD_SCORE - SEAL_MIN_SCORE ), 0, 1 )
+			q, checked = q + one, checked + ( symbol.marked and 1 or one )
 		end
-		if frame then q = q + clamp( ( frame.score - FRAME_SCORE ) / 0.25, 0, 1 ) end
-		symbol_quality = q / count
+		if frame then
+			local one = clamp( ( frame.score - FRAME_SCORE ) / 0.25, 0, 1 )
+			q, checked = q + one, checked + ( frame.marked and 1 or one )
+		end
+		symbol_quality, checked_quality = q / count, checked / count
 		precision = ( ring_quality + symbol_quality ) / 2
 	end
-	local reading_quality = precision
+	local reading_quality = count > 0 and ( ring_quality + checked_quality ) / 2 or precision
 	-- the price of complexity: every sign beyond a few is one more chance to slip
 	local complexity_cost = SIGN_COST * math.max( 0, #signs - SIMPLE_SEAL )
 	precision = math.max( 0, precision - complexity_cost )
@@ -362,18 +368,23 @@ function compile_spell( seal )
 		if resonance.forbidden then spell.forbidden = true end
 	end
 	if not named and count > 0 then
+		-- a sigil the witch marked is what she said, however roughly drawn: only its precision tells
 		local sigil_quality, sigil_count = 0, 0
 		for _, symbol in ipairs( seal.symbols ) do
-			if symbol.kind == "sigil" then
+			if symbol.kind == "sigil" and not symbol.marked then
 				sigil_quality = sigil_quality + clamp( ( symbol.score - SEAL_MIN_SCORE ) / ( SEAL_GOOD_SCORE - SEAL_MIN_SCORE ), 0, 1 )
 				sigil_count = sigil_count + 1
 			end
 		end
 		if sigil_count > 0 and sigil_quality / sigil_count < MIN_SIGIL_QUALITY then
-			trouble( seal, sigils )
+			local unmarked = {}
+			for _, symbol in ipairs( sigils ) do
+				if not symbol.marked then unmarked[#unmarked + 1] = symbol end
+			end
+			trouble( seal, unmarked )
 			return nil, "The sigil is too imprecise"
 		end
-		if symbol_quality - complexity_cost < MIN_SYMBOL_QUALITY then
+		if checked_quality - complexity_cost < MIN_SYMBOL_QUALITY then
 			trouble( seal, weak_symbols( seal ) )
 			return nil, "The symbols are too imprecise"
 		end
@@ -382,6 +393,16 @@ function compile_spell( seal )
 			return nil, "The seal is too imprecise"
 		end
 	end
+
+	-- a seal is no more precise than the lines the witch marked (seal.lua): she told the book what they are, not how well
+	-- they are drawn as it (the book's menu shows that share by each reading)
+	for _, symbol in ipairs( seal.symbols ) do
+		if symbol.marked then
+			local q = clamp( ( symbol.score - SEAL_MIN_SCORE ) / ( SEAL_GOOD_SCORE - SEAL_MIN_SCORE ), 0, 1 )
+			spell.precision = round2( math.min( spell.precision, q ) )
+		end
+	end
+	if frame and frame.marked then spell.precision = round2( math.min( spell.precision, clamp( ( frame.score - FRAME_SCORE ) / 0.25, 0, 1 ) ) ) end
 
 	spell.summary = spell_summary( spell, carrier )
 	if spell.precision < SEAL_SLOPPY then
@@ -560,7 +581,12 @@ end
 -- symbol by symbol; else, when its symbols don't read, a faithful copy of one of the wiki's seals of signs.
 -- Returns the spell (or nil and why not) and the seal tree when the drawing was read symbol by symbol
 function read_spell( strokes )
-	local spell = seal_named_spell( strokes )
+	-- a drawing with parts the witch marked (seal.lua) is read sign by sign, as she told the book
+	local marked = false
+	for _, stroke in ipairs( strokes ) do
+		if stroke.mark then marked = true end
+	end
+	local spell = not marked and seal_named_spell( strokes ) or nil
 	-- a page drawn round an element's sigil is read sign by sign too: its sigil may be another element's (the page in it,
 	-- or no longer the page: seal_page_takes). A page that takes any sigil in its middle tells it itself (seal_middle)
 	local whole = spell and spell.named and GRIMOIRE_BY_KEY[spell.named]

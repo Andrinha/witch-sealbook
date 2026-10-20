@@ -77,14 +77,14 @@ def merge_fragments(strokes, gap=0.035, min_length=0.04):
     return [l for l in lines if stroke_length(l) >= min_length]
 
 
-def lua_shape(strokes, traced=True):
+def lua_shape(strokes, traced=True, points=POINTS_PER_STROKE):
     """strokes -> Lua table text; traced strokes (the simulator's) are joined from fragments first. A
     one-point stroke is a dot and stays one point."""
     parts = []
     dots = [] if traced else [s for s in strokes if len(s) == 1]  # traced strokes: stray points aren't dots
     lines = merge_fragments(strokes) if traced else [s for s in strokes if len(s) > 1]
     for s in lines:
-        pts = resample(s)
+        pts = resample(s, points)
         parts.append("{ " + ", ".join(f"{{ {x:.3f}, {y:.3f} }}" for x, y in pts) + " }")
     for d in dots:
         x, y = d[0]
@@ -171,16 +171,26 @@ VARIANTS = {
                [line((0.5, 0.0), (0.5, 0.7)), line((0.35, 0.17), (0.5, 0.0), (0.65, 0.17)), shapes.circle(0.5, 0.84, 0.14)]],
 }
 
-# ... and sigils: fire with long horns standing apart from the sides of the triangle
+# ... and sigils: fire with long horns standing apart from the sides of the triangle; light as the wiki and the anime
+# draw it - a small diamond in the middle of the square, the rays out from its sides (the simulator's diamond fills the
+# square: a player's light read as light 2 of 30 times, as fire 12, 2026-10-21)
 SIGIL_VARIANTS = {
     "fire": [[line((0.5, 0.1), (0.9, 0.72), (0.1, 0.72), (0.5, 0.1)), line((0.5, 0.72), (0.5, 0.95)),
               line((0.25, 0.46), (0.07, 0.28)), line((0.75, 0.46), (0.93, 0.28))]],
+    "light": [[line((0.22, 0.22), (0.78, 0.22), (0.78, 0.78), (0.22, 0.78), (0.22, 0.22)),
+               line((0.5, 0.38), (0.62, 0.5), (0.5, 0.62), (0.38, 0.5), (0.5, 0.38)),
+               line((0.5, 0.22), (0.5, 0.0)), line((0.5, 0.78), (0.5, 1.0)), line((0.22, 0.5), (0.0, 0.5)), line((0.78, 0.5), (1.0, 0.5))]],
 }
 
 
 # Sigils whose own drawing comes before the simulator's: the first drawing is the one shown on the book's pages,
-# in its legend and in the air, so it should be the manga's. Both are still recognized.
+# in its legend and in the air, so it should be the manga's. Both are still recognized. (Not light: the tests draw the
+# first one, and their own seals drawn with the wiki's light were named after the wiki's pages traced with it.)
 PRIMARY_VARIANTS = {"earth"}
+
+# Outlines of many corners kept sharp: a stroke is resampled to this many points instead of POINTS_PER_STROKE (the
+# star's twelve corners in 24 points were cut off)
+STROKE_POINTS = {"flicker": 96}
 
 
 def main():
@@ -203,7 +213,8 @@ def main():
             forms = forms[1:] + forms[:1]
         lines.append(f"\t{key} = {{ {', '.join(forms)} }},")
     for key, strokes in shapes.SIGILS.items():
-        forms = [lua_shape(strokes, traced=False)] + [lua_shape(v, traced=False) for v in shapes.SIGIL_VARIANTS.get(key, [])]
+        n = STROKE_POINTS.get(key, POINTS_PER_STROKE)
+        forms = [lua_shape(strokes, traced=False, points=n)] + [lua_shape(v, traced=False, points=n) for v in shapes.SIGIL_VARIANTS.get(key, [])]
         lines.append(f"\t{key} = {{ {', '.join(forms)} }},")
     lines.append("}")
     lines.append("")

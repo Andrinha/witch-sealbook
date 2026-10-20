@@ -314,6 +314,10 @@ SIGIL_VARIANTS = {
                     SIGILS["concealment"][:4] + [line((0.42, 0.1), (0.58, 0.1)), line((0.42, 0.9), (0.58, 0.9)),
                                                 line((0.1, 0.42), (0.1, 0.58)), line((0.9, 0.42), (0.9, 0.58))]],
     "wind": [[_s_curve(0.5, 0.5, 0.9, 0.36)]],
+    # Flickering Light as the hexagram is often drawn: two triangles, one pointing up, one down (2026-10-21: a player's
+    # star of two triangles read 0 of 30 times, as fire or too imprecise)
+    "flicker": [[line((0.5, 0.02), (0.916, 0.74), (0.084, 0.74), (0.5, 0.02)),
+                 line((0.084, 0.26), (0.916, 0.26), (0.5, 0.98), (0.084, 0.26))]],
     "earth": [[line((0.14, 0.13), (0.86, 0.13)), line((0.5, 0.13), (0.5, 0.8)),
                line((0.343, 0.332), (0.153, 0.528), (0.5, 0.8), (0.846, 0.528), (0.655, 0.332)),
                line((0.14, 0.87), (0.86, 0.87)), dot(0.023, 0.41), dot(0.977, 0.41)]],

@@ -211,18 +211,18 @@ local function score( distance )
 	return math.max( 1 - distance * SCORE_SCALE / NUM_POINTS, 0 )
 end
 
--- strokes: list of point lists. Returns every template's match: { { key, tilt, score } }, where the
+-- strokes: list of point lists. Returns every template's match: { { key, tilt, score, template } }, where the
 -- score goes from 0 (no match) to 1 and tilt is how the drawing is turned against the template
--- (radians, clockwise on screen)
-function recognizer_scores( set, strokes )
+-- (radians, clockwise on screen). 'any_count': templates are tried however many strokes they ask for
+function recognizer_scores( set, strokes, any_count )
 	local pts = recognizer_normalized_points( strokes )
 	if not pts then return {} end
 	pts = to_cloud( pts )
 	local out = {}
 	for _, tpl in ipairs( set ) do
-		local limits = tpl.strokes
+		local limits = not any_count and tpl.strokes
 		if not limits or ( #strokes >= ( limits.min or 0 ) and #strokes <= ( limits.max or math.huge ) ) then
-			out[#out + 1] = { key = tpl.key, tilt = tpl.tilt, score = score( cloud_match( pts, tpl.cloud ) ) }
+			out[#out + 1] = { key = tpl.key, tilt = tpl.tilt, score = score( cloud_match( pts, tpl.cloud ) ), template = tpl }
 		end
 	end
 	return out

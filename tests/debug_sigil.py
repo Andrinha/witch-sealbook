@@ -28,8 +28,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import run_tests as t  # noqa: E402
 
 SAVE = os.path.expandvars(r"%USERPROFILE%\AppData\LocalLow\Nolla_Games_Noita\save00\world_state.xml")
-# the book a drawing was made in (books.lua) is in the records since there are three
-RECORD = re.compile(r"n=(\d+);frame=(\d+);(?:book=(\w+);)?result=(.*?);strokes=([-\d., |]*)")
+# the book a drawing was made in (books.lua) is in the records since there are three; the lines the player marked as a
+# symbol (notebook.lua "Mark") since there are marks
+RECORD = re.compile(r"n=(\d+);frame=(\d+);(?:book=(\w+);)?result=(.*?);strokes=([-\d., |]*)(?:;marks=([\w:@,;]*))?")
 
 # appended to seal.lua so it can reach its local functions: every group of strokes with its scores
 SEAL_DEBUG = r'''
@@ -76,7 +77,8 @@ def read_records(path):
     for m in RECORD.finditer(html.unescape(text)):
         n = int(m.group(1))
         strokes = [[tuple(map(float, p.split(","))) for p in s.split()] for s in m.group(5).split("|") if s.strip()]
-        records[n] = {"n": n, "frame": int(m.group(2)), "book": m.group(3) or "book", "result": m.group(4), "strokes": strokes}
+        records[n] = {"n": n, "frame": int(m.group(2)), "book": m.group(3) or "book", "result": m.group(4), "strokes": strokes,
+                      "marks": m.group(6) or ""}
     return records
 
 
@@ -103,6 +105,17 @@ def load_lua():
     return lua
 
 
+def apply_marks(lua, L, text):
+    """the marks of a record (strokes.lua strokes_encode_marks) on the Lua strokes L"""
+    for item in text.split(";"):
+        m = re.match(r"(\w+):(\w+)@([\d,]+)$", item)
+        if m:
+            mark = lua.table_from({"kind": m.group(1), "key": m.group(2)})
+            for i in m.group(3).split(","):
+                if L[int(i)] is not None:
+                    L[int(i)].mark = mark
+
+
 def explain(lua, rec):
     import math
     strokes = rec["strokes"]
@@ -114,6 +127,14 @@ def explain(lua, rec):
     same = now.split(";force=")[0] == rec["result"].split(";force=")[0]  # recorded points are rounded
     print(f"  current code: {now}{'' if same else '   <-- differs'}")
     print(f"  {len(strokes)} strokes, {sum(len(s) for s in strokes)} points, ink ~{round(t.length(strokes) * 0.1)}")
+    if rec["marks"]:
+        # what the player said lines are: the code above read them without
+        marked = t.lua_strokes(lua, strokes)
+        apply_marks(lua, marked, rec["marks"])
+        res = lua.eval("read_spell")(marked)
+        spell_m, err_m = (res[0], res[1]) if isinstance(res, tuple) else (res, None)
+        print(f"  marked by the player: {rec['marks']} (kind:key@strokes)")
+        print(f"  read with the marks: {spell_m['summary'] if spell_m else err_m}")
     info = lua.eval("debug_groups")(L)
     if not info:
         print("  no closed ring among the strokes")

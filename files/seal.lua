@@ -541,7 +541,7 @@ local SIGIL_STROKES = { aeriforms = { min = 5 }, crystal = { min = 4 }, concealm
 	undulation = { min = 3 }, calling = { min = 3 }, unburning = { min = 3 }, whorl = { min = 3 }, owlcat = { min = 3 },
 	leech = { min = 4 }, dragon = { min = 4 }, horse = { min = 4 }, bird = { min = 3 }, purification = { min = 3 },
 	obliviation = { min = 2 }, selection = { min = 2 }, billow = { min = 2 }, guidance = { min = 3 }, bridging = { min = 2 },
-	repetition = { min = 2 }, sword = { min = 2 }, flicker = { max = 3 }, lightning = { max = 2 }, smoke = { max = 3 },
+	repetition = { min = 2 }, sword = { min = 2 }, flicker = { max = 6 }, lightning = { max = 2 }, smoke = { max = 3 },
 	scalewolf = { min = 6 }, torchstag = { min = 4 }, liongoat = { min = 4 }, frillram = { min = 4 },
 	fish = { min = 2 }, -- its body and its tail: a lone S is the wind sigil's bare S, not a fish turned on its side
 	fire = { min = 2 } } -- the fire sigil is a triangle and its rays: a one-stroke star is Flickering Light
@@ -629,11 +629,16 @@ local function template_sets()
 	return sigil_set, sign_set, frame_set, glaive_set
 end
 
--- Flickering Light is a closed star outline. Join up to three strokes by their endpoints, trying
--- their order and direction; a pen lift may leave a small gap, but an open loop is not the outline.
+-- Flickering Light is a closed star outline. Join up to six strokes by their endpoints (a pen lifted at its points),
+-- trying their order and direction; a pen lift may leave a small gap, but an open loop is not the outline.
 local FLICKER_GAP = 0.18 -- widest endpoint gap, as a share of the symbol's size
+local FLICKER_STROKES = 6
+local FLICKER_FORM = 0.6 -- a star or a hexagram seen in its lines reads at least this well as Flickering Light: a dozen
+                         -- corners drawn by hand read poorly as a point cloud (a player's star "imprecise or too faint") ...
+local FLICKER_LIKE = 0.35 -- ... when it looks at least this much like it: a closed scribble may bend in as often (players'
+                          -- stars read 0.37 and up, such scribbles 0.28 at most)
 local function flicker_contour( strokes, box )
-	if #strokes == 0 or #strokes > 3 or box.size <= 0 then return nil end
+	if #strokes == 0 or #strokes > FLICKER_STROKES or box.size <= 0 then return nil end
 	for _, stroke in ipairs( strokes ) do if #stroke < 2 then return nil end end
 	local gap2 = ( FLICKER_GAP * box.size ) ^ 2
 	local function distance2( a, b ) return ( a.x - b.x ) ^ 2 + ( a.y - b.y ) ^ 2 end
@@ -672,7 +677,55 @@ local function flicker_contour( strokes, box )
 	return best
 end
 
+-- ... or the hexagram drawn as two triangles, one pointing up, one down: the strokes join end to end into two closed
+-- lines of three corners each, about as big as the whole and sharing its middle
+local function closed_loops( strokes, box )
+	local gap2 = ( FLICKER_GAP * box.size ) ^ 2
+	local function distance2( a, b ) return ( a.x - b.x ) ^ 2 + ( a.y - b.y ) ^ 2 end
+	local left, loops = {}, {}
+	for _, stroke in ipairs( strokes ) do
+		if #stroke < 2 then return nil end
+		left[#left + 1] = stroke
+	end
+	while #left > 0 do
+		local loop = {}
+		for _, p in ipairs( table.remove( left, 1 ) ) do loop[#loop + 1] = p end
+		-- the stroke going on from the loop's end, until it comes back to its start
+		while distance2( loop[#loop], loop[1] ) > gap2 do
+			local next_k, reverse, nearest
+			for k, stroke in ipairs( left ) do
+				for direction = 0, 1 do
+					local d = distance2( loop[#loop], stroke[direction == 0 and 1 or #stroke] )
+					if d <= gap2 and ( not nearest or d < nearest ) then next_k, reverse, nearest = k, direction == 1, d end
+				end
+			end
+			if not next_k then return nil end
+			local stroke = table.remove( left, next_k )
+			for i = 1, #stroke do loop[#loop + 1] = stroke[reverse and #stroke + 1 - i or i] end
+		end
+		loops[#loops + 1] = loop
+	end
+	return loops
+end
+local function hexagram_shape( strokes, box )
+	if #strokes < 2 or #strokes > FLICKER_STROKES then return false end
+	local loops = closed_loops( strokes, box )
+	if not loops or #loops ~= 2 then return false end
+	local a, b = bbox( { loops[1] } ), bbox( { loops[2] } )
+	if math.min( a.size, b.size ) < 0.6 * box.size then return false end
+	if math.abs( a.cx - b.cx ) > 0.2 * box.size or math.abs( a.cy - b.cy ) > 0.25 * box.size then return false end
+	for _, loop in ipairs( loops ) do
+		local corners = corner_count( loop )
+		if corners < 2 or corners > 4 then return false end
+	end
+	return true
+end
+
+-- How well the strokes read as Flickering Light by their form (FLICKER_FORM, a little less for a star of fewer valleys),
+-- or false: no star or hexagram
 local function flicker_shape( strokes, box )
+	if #strokes > FLICKER_STROKES then return false end
+	if hexagram_shape( strokes, box ) then return FLICKER_FORM end
 	local contour = flicker_contour( strokes, box )
 	local points = contour and recognizer_normalized_points( { contour } )
 	if not points then return false end
@@ -700,7 +753,7 @@ local function flicker_shape( strokes, box )
 		end
 	end
 	-- The reference has six valleys; four allows an uneven hand without admitting smooth loops.
-	return valleys >= 4 and inward >= 2
+	return valleys >= 4 and inward >= 2 and FLICKER_FORM - 0.02 * ( 6 - math.min( valleys, 6 ) )
 end
 
 -- The water sigil is an S between two drops. As one point cloud the drops' outlines outweigh the S, so drops drawn
@@ -838,9 +891,13 @@ local function recognize_symbol_uncached( strokes, box, ring )
 	local size = box.size / ring.r
 	local key, score = nil, 0
 	if size >= SIGIL_MIN_SIZE then key, score = recognizer_match( sigils, strokes ) end
-	if key == "flicker" and not flicker_shape( strokes, box ) then
+	local star = size >= SIGIL_MIN_SIZE and flicker_shape( strokes, box )
+	if star and key ~= "flicker" and sigil_score( strokes, "flicker" ) < FLICKER_LIKE then star = false end
+	if key == "flicker" and not star then
 		key, score = recognizer_match( non_flicker_sigil_set, strokes )
 	end
+	-- a star or a hexagram seen in its lines is Flickering Light, when nothing reads better
+	if star and ( key == "flicker" or star > score ) then key, score = "flicker", math.max( key == "flicker" and score or 0, star ) end
 	local water = size >= SIGIL_MIN_SIZE and water_shape( strokes )
 	if water and water > score then key, score = "water", water end
 	local best = { kind = "sigil", key = key, score = score, inverted = false }
@@ -936,6 +993,136 @@ local function read_as_sign( strokes, ring, key )
 	return { kind = "sign", key = key, score = m.score, inverted = m.template.inverted, turn = m.template.turn,
 		mirror = m.template.mirror, dir = angle - math.pi + m.template.tilt, margin = 1, twin = true, strokes = strokes,
 		angle = angle, dist = math.sqrt( dx * dx + dy * dy ) / ring.r, size = box.size / ring.r }
+end
+
+-- Marks: strokes the witch circled on the page and told the book what they are (notebook.lua) - stroke.mark = { kind
+-- ("sign", "sigil" or "frame"), key }, the strokes sharing one mark are one symbol. They are read as that symbol however
+-- like another they look; how well they are drawn as it still counts (its score: the seal's precision), but a marked
+-- symbol is never ambiguous or too faint (seal_spell.lua).
+local MARK_LISTS = { sign = "DICTIONARY_SIGNS", sigil = "DICTIONARY_SIGILS", frame = "DICTIONARY_FRAMES" }
+local function mark_of( stroke )
+	local mark = stroke.mark
+	local list = mark and MARK_LISTS[mark.kind] and _G[MARK_LISTS[mark.kind]]
+	return list and list[mark.key] and mark or nil
+end
+
+-- the templates of one symbol, in every pose its set has
+local templates_by_key = {}
+local function templates_of( kind, key )
+	local id = kind .. ":" .. key
+	if not templates_by_key[id] then
+		local sigils, signs, frames = template_sets()
+		local only = {}
+		for _, tpl in ipairs( kind == "sigil" and sigils or kind == "frame" and frames or signs ) do
+			if tpl.key == key then only[#only + 1] = tpl end
+		end
+		templates_by_key[id] = only
+	end
+	return templates_by_key[id]
+end
+
+-- 'strokes' marked as 'mark', in their place in the ring: a symbol as recognize_symbol makes it
+local function marked_symbol( strokes, mark, ring )
+	local box = bbox( strokes )
+	local dx, dy = box.cx - ring.x, box.cy - ring.y
+	local angle = math.atan2( dy, dx )
+	local sym = { kind = mark.kind, key = mark.key, score = 0, inverted = false, turn = 0, dir = angle - math.pi, margin = 1,
+		marked = true, strokes = strokes, angle = angle, dist = math.sqrt( dx * dx + dy * dy ) / ring.r, size = box.size / ring.r }
+	local shape = mark.kind == "sign" and rotate( strokes, box.cx, box.cy, math.pi / 2 - angle ) or strokes
+	local best, best_value
+	for _, m in ipairs( recognizer_scores( templates_of( mark.kind, mark.key ), shape, true ) ) do
+		local value = m.score - ( m.template.penalty or 0 )
+		if not best_value or value > best_value then best, best_value = m, value end
+	end
+	if best then
+		sym.score = best.score
+		if mark.kind == "sign" then
+			sym.inverted, sym.turn, sym.mirror = best.template.inverted, best.template.turn, best.template.mirror
+			sym.dir = angle - math.pi + best.template.tilt
+		end
+	end
+	if mark.kind == "sigil" and mark.key == "water" then sym.score = math.max( sym.score, water_shape( strokes ) or 0 ) end
+	return sym
+end
+
+-- The marked strokes among 'strokes', read apart: their groups ({ strokes, box, symbols }), a frame (seal.frames' entry,
+-- or nil) and the strokes left
+local function take_marked( strokes, ring )
+	local by_mark, order, rest = {}, {}, {}
+	for _, stroke in ipairs( strokes ) do
+		local mark = mark_of( stroke )
+		if mark then
+			if not by_mark[mark] then
+				by_mark[mark] = {}
+				order[#order + 1] = mark
+			end
+			table.insert( by_mark[mark], stroke )
+		else
+			rest[#rest + 1] = stroke
+		end
+	end
+	local groups, frame = {}, nil
+	for _, mark in ipairs( order ) do
+		local list = by_mark[mark]
+		local sym = marked_symbol( list, mark, ring )
+		if mark.kind == "frame" then
+			if not frame or sym.score > frame.score then frame = { key = mark.key, score = sym.score, size = sym.size, marked = true } end
+		else
+			groups[#groups + 1] = { strokes = list, box = bbox( list ), symbols = { sym } }
+		end
+	end
+	return groups, frame, rest
+end
+
+-- What strokes circled on a page ('selected', some of its 'strokes') may be read as, the likeliest first:
+-- { { kind, key, score, tilt, mirror, angle } }, at most 'limit', none read worse than the least a symbol is read as (a
+-- frame: FRAME_SCORE). A sigil as drawn, a sign
+-- in its place on the ring (the ring as drawn so far, closed or not), a frame if big enough to be one. 'tilt': how
+-- the template lies turned to look like them (a sign's, 'angle' its place on the ring: a sign stands at the bottom of
+-- the ring turned by angle - pi/2).
+function seal_mark_readings( strokes, selected, limit )
+	if #selected == 0 then return {} end
+	local ring, _, open = find_ring( strokes )
+	if not ring then ring = open end
+	if not ring then
+		local all = bbox( strokes )
+		ring = { x = all.cx, y = all.cy, r = math.max( all.size / 2, MIN_RING_SIZE / 2 ) }
+	end
+	local box = bbox( selected )
+	local angle = math.atan2( box.cy - ring.y, box.cx - ring.x )
+	local sigils, signs, frames = template_sets()
+	local best = {}
+	local function take( kind, list )
+		for _, m in ipairs( list ) do
+			local id = kind .. ":" .. m.key
+			local value = m.score - ( m.template.penalty or 0 )
+			if not best[id] or value > best[id].value then
+				best[id] = { kind = kind, key = m.key, score = m.score, value = value, tilt = m.tilt, mirror = m.template.mirror, angle = angle }
+			end
+		end
+	end
+	take( "sigil", recognizer_scores( sigils, selected, true ) )
+	-- the sigils read by their form too, as recognize_symbol reads them
+	local star = flicker_shape( selected, box )
+	if star and sigil_score( selected, "flicker" ) < FLICKER_LIKE then star = false end
+	for key, form in pairs( { water = water_shape( selected ), flicker = star } ) do
+		local id = "sigil:" .. key
+		if form and ( not best[id] or form > best[id].value ) then
+			best[id] = { kind = "sigil", key = key, score = form, value = form, tilt = 0, angle = angle }
+		end
+	end
+	take( "sign", recognizer_scores( signs, rotate( selected, box.cx, box.cy, math.pi / 2 - angle ), true ) )
+	if box.size >= FRAME_MIN * ring.r then take( "frame", recognizer_scores( frames, selected, true ) ) end
+	local out = {}
+	for _, reading in pairs( best ) do
+		if reading.score >= ( reading.kind == "frame" and FRAME_SCORE or SEAL_MIN_SCORE ) then out[#out + 1] = reading end
+	end
+	table.sort( out, function( a, b )
+		if a.score ~= b.score then return a.score > b.score end
+		return a.kind .. a.key < b.kind .. b.key
+	end )
+	for k = #out, ( limit or 8 ) + 1, -1 do out[k] = nil end
+	return out
 end
 
 -- Twins round the ring: a seal's signs are drawn round it alike, often mirrored. 'named': glyphs whose reading is sure,
@@ -1651,6 +1838,10 @@ local function parse_with( strokes, noise )
 
 	-- other circles: layers (concentric), seals inside, seals on the ring, linked seals outside
 	local circles = find_circles( strokes, ring_parts, 12 )
+	-- a circle marked as a symbol (a Repetition's) is that symbol, no seal of its own
+	for k = #circles, 1, -1 do
+		if mark_of( strokes[circles[k].index] ) then table.remove( circles, k ) end
+	end
 	local claimed = {}
 	for i in pairs( ring_parts ) do claimed[i] = true end
 	-- Dancing Puppets: a ring around the sigil with small rings on it and arms reaching out (Flying Puppet
@@ -1792,7 +1983,8 @@ local function parse_with( strokes, noise )
 		if not claimed[i] then
 			local b = bbox( { stroke } )
 			local d2 = ( b.cx - ring.x ) ^ 2 + ( b.cy - ring.y ) ^ 2
-			local keep = b.size >= noise or #stroke <= 3 or ornamental_ink[stroke]
+			local marked = mark_of( stroke )
+			local keep = b.size >= noise or #stroke <= 3 or ornamental_ink[stroke] or marked
 			if not keep and b.size >= SMALL_MARK then seal.small = ( seal.small or 0 ) + 1 end
 			if not keep then
 				if d2 < ( ring.r * INSIDE ) ^ 2 then
@@ -1801,7 +1993,8 @@ local function parse_with( strokes, noise )
 					tiny_outside_ink = tiny_outside_ink + stroke_length( stroke )
 				end
 			end
-			if keep and d2 < ( ring.r * INSIDE ) ^ 2 then
+			-- a marked symbol by the ring is inside it
+			if keep and ( d2 < ( ring.r * INSIDE ) ^ 2 or marked and d2 < ring.r ^ 2 ) then
 				inner[#inner + 1] = stroke
 			elseif keep then
 				outside[#outside + 1] = stroke
@@ -1882,11 +2075,15 @@ local function parse_with( strokes, noise )
 		end
 	end
 
-	local frame, frame_index = find_frame( inner, ring )
+	-- what the witch marked is what she said it is, read apart from the rest
+	local marked, marked_frame
+	marked, marked_frame, inner = take_marked( inner, ring )
+	local frame, frame_index = marked_frame, nil
+	if not frame then frame, frame_index = find_frame( inner, ring ) end
 	if frame then
 		seal.frames[1] = frame
 		local used = {}
-		for _, i in ipairs( frame_index ) do used[i] = true end
+		for _, i in ipairs( frame_index or {} ) do used[i] = true end
 		local rest = {}
 		for i, stroke in ipairs( inner ) do if not used[i] then rest[#rest + 1] = stroke end end
 		inner = rest
@@ -2001,6 +2198,7 @@ local function parse_with( strokes, noise )
 	end
 	groups = read_twins( kept_groups, ring )
 	for _, group in ipairs( decorations ) do groups[#groups + 1] = group end
+	for _, group in ipairs( marked ) do groups[#groups + 1] = group end
 	-- segment() forgives individual short marks, but many such marks must not disappear together and leave
 	-- an otherwise convincing sigil behind. Count ink that none of the chosen groups explains.
 	local grouped, unread_ink = {}, tiny_inner_ink
@@ -2057,9 +2255,12 @@ end
 parse_inside = function( strokes, c )
 	local sub = { ring = { x = c.x, y = c.y, r = c.r, roundness = c.roundness }, symbols = {}, layers = {}, frames = {}, subs = {},
 		links = {}, glaives = 0, satellites = 0 }
-	for _, group in ipairs( segment( strokes, sub.ring ) ) do
+	local marked, frame, rest = take_marked( strokes, sub.ring )
+	for _, group in ipairs( segment( rest, sub.ring ) ) do
 		for _, symbol in ipairs( group.symbols or {} ) do sub.symbols[#sub.symbols + 1] = symbol end
 	end
+	for _, group in ipairs( marked ) do sub.symbols[#sub.symbols + 1] = group.symbols[1] end
+	sub.frames[1] = frame
 	return sub
 end
 
