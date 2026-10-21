@@ -950,8 +950,9 @@ end
 ---- marking what lines are (book_marks.lua) ----
 
 -- The lines circled in 'menu' are 'item' (a reading picked; nil: what the book reads them as); a seal whose ring is
--- closed is read again at once
+-- closed is read again at once; the pen is taken up again after it
 local function mark_lines( item, menu )
+	cur.marker_selected, cur.eraser_selected = false, false
 	if menu.page ~= cur.edit then return end
 	BookUndo.remember( cur.edit )
 	local mark = item and { kind = item.kind, key = item.key } or nil
