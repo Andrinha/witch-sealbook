@@ -521,7 +521,7 @@ end
 local function edit_seal( i )
 	local seal = cur.seals[i]
 	if not seal or seal.sheet ~= "" then return end
-	seal.draft, seal.fresh, seal.parts = "1", "", nil
+	seal.draft, seal.fresh, seal.parts, seal.parts_of = "1", "", nil, nil -- put back as it was, it is read again (drawn_parts)
 	select_edit_page( cur.def.intro + i ) -- a draft now: the page drawn on
 	seal.point_count = 0
 	for _, stroke in ipairs( seal.strokes ) do seal.point_count = seal.point_count + #stroke end
@@ -2160,6 +2160,8 @@ function notebook_update()
 	if BookMarks.menu and clicked then
 		BookMarks.click( mx, my )
 		clicked, wait_release = false, true
+	elseif BookMarks.menu and InputIsMouseButtonJustDown( MOUSE_RIGHT ) then
+		BookMarks.menu, wait_release = nil, true -- RMB closes it, erasing nothing
 	end
 
 	if notebook_box and clicked then

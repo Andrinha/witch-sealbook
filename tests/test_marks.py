@@ -293,6 +293,17 @@ class MarkInTheBook(unittest.TestCase):
         self.assertEqual("", G.globals["witch_notebook.seal_1_draft"])
         self.assertEqual("1", G.globals["witch_notebook.active"])
         self.assertEqual(spell, G.globals["witch_notebook.seal_1_spell"])
+        # opened again, the menu closed with RMB, an ink: the seal under the mouse tells its parts (they were dropped)
+        R.press_button(G, MARK_BUTTON)
+        lasso(G, pos, k, cx, cy, 0.33 * r)
+        G.right_down = G.right_just_down = True; G.notebook_update(); G.right_just_down = G.right_down = False
+        self.assertIsNone(lua.eval("BookMarks.menu"))
+        G.notebook_update()
+        G.mouse[1], G.mouse[2] = view.panel.x + 5, view.panel.y + 10
+        G.left_down = G.left_just_down = True; G.notebook_update(); G.left_just_down = G.left_down = False; G.notebook_update()
+        self.assertEqual("", G.globals["witch_notebook.seal_1_draft"])
+        G.mouse[1], G.mouse[2] = pos.x + cx * k, pos.y + cy * k
+        G.notebook_update()
         # marked as a sign in the middle: no element sigil, it stays a draft; the book put away, still one
         R.press_button(G, MARK_BUTTON)
         lasso(G, pos, k, cx, cy, 0.33 * r)
