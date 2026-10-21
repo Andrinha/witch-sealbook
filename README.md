@@ -22,7 +22,10 @@ some combinations resonate into magic of their own.
   water puts out fire, smoke blinds
 - seven inks that change how a seal behaves
 - three books: the Spellbook, the small Palm Quire and the Great Tome for the biggest seals
-- the book misreads a sign? **Mark** it: circle its lines and pick what it is - how well it is drawn still counts
+- the book misreads a sign? **Mark** it: circle its lines and pick what it is - how well it is drawn still counts; a seal
+  that fails on one sign tells under it what that looks like, with Mark at hand
+- a slip of the mouse? **Undo** (Ctrl+Z) takes back the last line, erasing or marking; hold **Shift** for a compass that
+  draws a true ring
 
 **Install:** subscribe on the [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3813350195), or
 put this folder into `Noita/mods/witch_notebook` and enable it in the Mods menu.

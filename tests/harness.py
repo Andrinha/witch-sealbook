@@ -27,13 +27,13 @@ SEAL_FILES = ["files/seal.lua", "files/seal_canon.lua", "files/seal_spell.lua"]
 READER_FILES = ["files/templates.lua", "files/dictionary.lua", "files/resonances.lua", "files/recognizer.lua"] + SEAL_FILES
 GRIMOIRE_FILE = "files/grimoire.lua"
 # the books, in init.lua's order
-MOD_FILES = ["files/templates.lua", "files/dictionary.lua", "files/resonances.lua", "files/sigils.lua", "files/recognizer.lua"] + SEAL_FILES + [
+MOD_FILES = ["files/run_clock.lua", "files/templates.lua", "files/dictionary.lua", "files/resonances.lua", "files/sigils.lua", "files/recognizer.lua"] + SEAL_FILES + [
              "files/books.lua", "files/cast.lua", "files/ink.lua", "files/sheets.lua", "files/book_gfx.lua", "files/book_draw.lua", "files/page_turn.lua",
              "files/awaken.lua", "files/strokes.lua", "files/book_store.lua", "files/book_mouse.lua", "files/book_pages.lua",
-             "files/book_marks.lua", "files/quire_strap.lua", "files/quire_strap_world.lua", "files/spell_notes.lua", "files/test_book.lua",
+             "files/book_marks.lua", "files/book_reading.lua", "files/book_undo.lua", "files/book_compass.lua", "files/quire_strap.lua", "files/quire_strap_world.lua", "files/spell_notes.lua", "files/test_book.lua",
              "files/notebook.lua"]
 # the world's magic: what casts a page
-WORLD_FILES = ["files/templates.lua", "files/dictionary.lua", "files/resonances.lua", "files/sigils.lua", "files/recognizer.lua",
+WORLD_FILES = ["files/run_clock.lua", "files/templates.lua", "files/dictionary.lua", "files/resonances.lua", "files/sigils.lua", "files/recognizer.lua",
                GRIMOIRE_FILE] + SEAL_FILES + ["files/cast.lua"]
 
 
@@ -117,6 +117,8 @@ function InputGetMousePosOnScreen() return mouse[1] * 2, mouse[2] * 2 end
 function InputIsMouseButtonDown(b) return (b == 1 and left_down) or (b == 2 and right_down) end
 function InputIsMouseButtonJustDown(b) return (b == 2 and right_just_down) or (b == 1 and left_just_down) end
 function InputIsKeyJustDown(k) return (k == 5 and key_b) or pressed[k] == true end
+keys_down = {} -- keys held (Ctrl, the compass's)
+function InputIsKeyDown(k) return keys_down[k] == true end
 function GuiCreate() return {} end
 function GuiStartFrame() end
 function GuiGetScreenDimensions() return SW, SH end

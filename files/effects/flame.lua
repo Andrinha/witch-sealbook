@@ -110,7 +110,7 @@ end
 -- A helix particle of a held cast burns the creatures it passes through. The pause between hits is kept on the
 -- creature, so the many particles of one stream hurt it as the straight column does (burn), not once each.
 local function ember_burn( p, x, y )
-	local frame = GameGetFrameNum()
+	local frame = run_frame() -- kept on the creature: the run's clock, which goes on across Save & Quit
 	for _, id in ipairs( creatures_in( x, y, 24, p.owner, true ) ) do
 		local ex, ey = EntityGetTransform( id )
 		local box = EntityGetFirstComponent( id, "HitboxComponent" )
@@ -126,7 +126,9 @@ local function ember_burn( p, x, y )
 			for _, comp in ipairs( EntityGetComponent( id, "VariableStorageComponent" ) or {} ) do
 				if ComponentGetValue2( comp, "name" ) == "witch_spiral_hit" then last = comp; break end
 			end
-			if not last or frame >= ComponentGetValue2( last, "value_int" ) + 6 then
+			local hit_at = last and ComponentGetValue2( last, "value_int" )
+			-- (one ahead of now was kept before the run's clock: it is long past)
+			if not last or frame >= hit_at + 6 or hit_at > frame then
 				seal_damage( id, 0.12 * ( p.power or 1 ), "DAMAGE_FIRE", p.owner, x, y )
 				if last then ComponentSetValue2( last, "value_int", frame )
 				else
@@ -240,9 +242,9 @@ local function stream( e, p, age )
 	effect_fire_loop( e, open )
 	-- Flamethrower/create is a short sound, not a loop. Renew it while the
 	-- nozzle emits, including after unblocking; individual embers stay silent.
-	local frame = GameGetFrameNum()
+	local frame = run_frame()
 	if open then
-		if frame >= ( p.fire_sound_next or 0 ) then
+		if frame >= ( p.fire_sound_next or 0 ) or ( p.fire_sound_next or 0 ) > frame + 12 then
 			effect_sound( "fire_jet", p.ox, p.oy )
 			effect_set( e, "fire_sound_next", frame + 12 )
 		end
@@ -354,9 +356,9 @@ local function ball( e, p, age, x, y, profile )
 			ComponentSetValue2( light, "radius", radius )
 		end
 	end
-	local born = p.fluid_born
-	if born == nil then born = GameGetFrameNum(); effect_set( e, "fluid_born", born ) end
-	local fluid_age = GameGetFrameNum() - born
+	local born, now = p.fluid_born, run_frame()
+	if born == nil or born > now then born = now; effect_set( e, "fluid_born", born ) end
+	local fluid_age = now - born
 	local power = math.max( 0.5, math.min( 2, p.power or 1 ) )
 	local frame = { ox = x, oy = y, dx = 1, dy = 0, head = 0, speed = 0, frame_velocity = 0,
 		cell = 2, r = p.r, power = power, inlet_width = math.max( 0.8, p.r * 0.22 / 2 ), inlet_heat = 38 * power }

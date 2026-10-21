@@ -2,6 +2,8 @@
 -- unfinished page - a lasso: the lines lying mostly inside it - and picks what they are from what they could be read as
 -- (seal.lua seal_mark_readings). The book then reads them as that symbol (stroke.mark, kept with the page by
 -- book_store.lua), and how well they are drawn as it still counts. A click on marked lines shows their readings again.
+-- A seal that fails on one symbol tells under it what it looks most like, and [Mark] there opens the menu for its lines
+-- (BookMarks.draw_doubt, BookMarks.doubt_click).
 -- Here: the lasso and the menu (BookMarks.lasso, BookMarks.menu) and how they and the marked lines are drawn;
 -- notebook.lua marks the lines picked and reads the seal again (BookMarks.on_pick), and tells what went wrong
 -- (BookMarks.tell).
@@ -67,6 +69,14 @@ function K.name( item )
 	local element = def.element and DICTIONARY_ELEMENTS[def.element]
 	return def.name or element and element.name or item.key
 end
+
+-- the precision the lines give the seal read as one of seal_mark_readings' (seal_spell.lua compile_spell), 0..1
+function K.precision( item )
+	local q = item.kind == "frame" and ( item.score - SealRead.FRAME_SCORE ) / 0.25
+		or ( item.score - SEAL_MIN_SCORE ) / ( SEAL_GOOD_SCORE - SEAL_MIN_SCORE )
+	return math.max( 0, math.min( 1, q ) )
+end
+local function percent( item ) return math.floor( K.precision( item ) * 100 + 0.5 ) .. "%" end
 
 -- 'lines' (some of the page's 'strokes') still look like 'mark' as well as the menu wants to offer it: partly erased
 -- they may not
@@ -166,18 +176,23 @@ function K.draw_marks( s, strokes )
 	s.pen, s.step = pen, step
 end
 
--- the marked lines of 'page' under the mouse at px, py on the page 's' ('size' big) lit, what they are marked as under them
-function K.draw_hover( s, page, px, py, size )
-	local list = marked_at( page, px, py )
-	if not list then return end
-	D.strokes( s, list, function() return GLOW, 1 end, nil, 24 )
+local function bounds( strokes )
 	local minx, maxx, miny, maxy = math.huge, -math.huge, math.huge, -math.huge
-	for _, stroke in ipairs( list ) do
+	for _, stroke in ipairs( strokes ) do
 		for _, p in ipairs( stroke ) do
 			minx, maxx = math.min( minx, p.x ), math.max( maxx, p.x )
 			miny, maxy = math.min( miny, p.y ), math.max( maxy, p.y )
 		end
 	end
+	return minx, maxx, miny, maxy
+end
+
+-- the marked lines of 'page' under the mouse at px, py on the page 's' ('size' big) lit, what they are marked as under them
+function K.draw_hover( s, page, px, py, size )
+	local list = marked_at( page, px, py )
+	if not list then return end
+	D.strokes( s, list, function() return GLOW, 1 end, nil, 24 )
+	local minx, maxx, miny, maxy = bounds( list )
 	local line = "Marked: " .. K.name( list[1].mark ) .. " - click to change"
 	local w = GuiGetTextDimensions( D.gui(), line )
 	local x = math.max( 2, math.min( size - w - 2, ( minx + maxx - w ) / 2 ) )
@@ -185,6 +200,67 @@ function K.draw_hover( s, page, px, py, size )
 	if y + 11 > size - 3 then y = miny - 12 end
 	s:image( x - 2, y - 1, NOTEBOOK_INK_IMAGE, 19, PAPER, 0.95, ( w + 4 ) / 2, 5.5 )
 	s:text( x, y, line, P.TEXT_COLOR, 18 )
+end
+
+---- a seal that failed on one symbol ----
+
+K.doubt_at = nil -- where [Mark] lay by a failed seal's lines the frame before: { x0, y0, x1, y1 (screen), page, face, x, y
+                 -- (on the page, under it: where the menu opens) }, or nil
+
+-- Under the lines a seal failed on (page.doubt, book_reading.lua): what they look most like - "Column or Dispersion?" -
+-- and [Mark]: a click on it opens the menu of their readings (K.doubt_click).
+-- 's': the page's surface, lying at 'pos' on the screen; the mouse at px, py on it; 'size': the page's.
+function K.draw_doubt( s, page, face, pos, px, py, size )
+	local doubt, gui = page.doubt, D.gui()
+	local names = {}
+	for i, item in ipairs( doubt.items ) do names[i] = K.name( item ) end
+	local button = "[Mark]"
+	local bw = GuiGetTextDimensions( gui, button )
+	-- on one line, or a reading a line where the page is too narrow for it
+	local lines = { table.concat( names, " or " ) .. "?" }
+	if #names > 1 and GuiGetTextDimensions( gui, lines[1] ) + 4 + bw > size - 6 then lines = { names[1] .. " or", names[2] .. "?" } end
+	local w = 0
+	for i, line in ipairs( lines ) do w = math.max( w, GuiGetTextDimensions( gui, line ) + ( i == #lines and 4 + bw or 0 ) ) end
+	local minx, maxx, miny, maxy = bounds( doubt.strokes )
+	local h = 11 * #lines
+	local x = math.max( 2, math.min( size - w - 2, ( minx + maxx - w ) / 2 ) )
+	-- under the lines, or over them where it hides less of the drawing (or there is no room under them)
+	local mine = {}
+	for _, stroke in ipairs( doubt.strokes ) do mine[stroke] = true end
+	local function hides( top )
+		local n = 0
+		for _, stroke in ipairs( page.strokes ) do
+			for _, p in ipairs( mine[stroke] and {} or stroke ) do
+				if p.x >= x - 2 and p.x <= x + w + 2 and p.y >= top - 1 and p.y <= top + h then n = n + 1 end
+			end
+		end
+		return n
+	end
+	local y, over_them = maxy + 3, miny - h - 1
+	if over_them >= 3 and ( y + h > size - 3 or hides( over_them ) < hides( y ) ) then y = over_them end
+	s:image( x - 2, y - 1, NOTEBOOK_INK_IMAGE, 19, PAPER, 0.95, ( w + 4 ) / 2, h / 2 )
+	for i, line in ipairs( lines ) do s:text( x, y + 11 * ( i - 1 ), line, P.TEXT_COLOR, 18 ) end
+	local bx, by = x + GuiGetTextDimensions( gui, lines[#lines] ) + 4, y + 11 * ( #lines - 1 )
+	local over = px >= bx - 2 and px <= bx + bw + 2 and py >= by - 2 and py <= by + 10
+	if over then D.strokes( s, doubt.strokes, function() return GLOW, 1 end, nil, 24 ) end
+	s:text( bx, by, button, over and GLOW or P.TITLE_COLOR, 18 )
+	K.doubt_at = { x0 = pos.x + bx - 2, y0 = pos.y + by - 2, x1 = pos.x + bx + bw + 2, y1 = pos.y + by + 10, page = page,
+		face = face, x = bx, y = by + 10 }
+end
+
+-- A click at mx, my on the screen: on [Mark] by a failed seal's lines, the menu of what they may be read as opens there.
+-- Returns whether it took the click.
+function K.doubt_click( mx, my )
+	local at = K.doubt_at
+	if not at or not at.page.doubt or mx < at.x0 or mx > at.x1 or my < at.y0 or my > at.y1 then return false end
+	local page, lines = at.page, at.page.doubt.strokes
+	local marked = false
+	for _, stroke in ipairs( lines ) do
+		if stroke.mark then marked = true end
+	end
+	K.menu = { page = page, face = at.face, strokes = lines, items = seal_mark_readings( page.strokes, lines, CHOICES ),
+		marked = marked, x = at.x, y = at.y }
+	return true
 end
 
 -- the lasso being drawn on the page 's': a dotted line round what it circles, closed back to its start
@@ -210,13 +286,9 @@ function K.draw_menu( s, pos, bounds, mx, my )
 	local mark = menu.strokes[1].mark
 	local rows = {}
 	for _, item in ipairs( menu.items ) do
-		-- the precision the lines give the seal as it (seal_spell.lua compile_spell)
-		local q = item.kind == "frame" and ( item.score - SealRead.FRAME_SCORE ) / 0.25
-			or ( item.score - SEAL_MIN_SCORE ) / ( SEAL_GOOD_SCORE - SEAL_MIN_SCORE )
-		q = math.max( 0, math.min( 1, q ) )
 		local current = mark and mark.kind == item.kind and mark.key == item.key
 		rows[#rows + 1] = { kind = "item", item = item, text = ( current and "* " or "" ) .. K.name( item ),
-			note = item.kind .. " " .. math.floor( q * 100 + 0.5 ) .. "%" }
+			note = item.kind .. " " .. percent( item ) }
 	end
 	if menu.marked then rows[#rows + 1] = { kind = "unmark", text = "As the book reads it" } end
 	rows[#rows + 1] = { kind = "cancel", text = "Cancel" }

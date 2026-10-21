@@ -355,22 +355,25 @@ class MarkInTheBook(unittest.TestCase):
         R.toggle_book(G)
         self.assertEqual("", G.globals["witch_notebook.seal_1_draft"])
         self.assertEqual("1", G.globals["witch_notebook.active"])
-        # pressed on a column's line and along it: erased
+        # pressed on a column's line and along it: opened and erased; let go, the drawing changed with its ring closed is
+        # read again - it awakens as what is left
         R.open_book(G, to_blank=False)
         R.press_button(G, ERASE_BUTTON)  # the book opens with the pen
         before = G.globals["witch_notebook.seal_1_strokes"]
         G.left_down = G.left_just_down = True
-        for x, y in strokes[columns[0] - 1]:
+        for i, (x, y) in enumerate(strokes[columns[0] - 1]):
             G.mouse[1], G.mouse[2] = pos.x + x * k, pos.y + y * k
             G.notebook_update()
             G.left_just_down = False
+            if i == len(strokes[columns[0] - 1]) // 2:
+                self.assertEqual("1", G.globals["witch_notebook.seal_1_draft"])
         G.left_down = False; G.notebook_update()
-        self.assertEqual("1", G.globals["witch_notebook.seal_1_draft"])
+        self.assertEqual("", G.globals["witch_notebook.seal_1_draft"])
         self.assertNotEqual(before, G.globals["witch_notebook.seal_1_strokes"])
 
     def test_rmb_drawn_across_a_seal_opens_it(self):
         # RMB clicked on a drawn seal leaves it be; held and drawn along a line of it, the seal opens and the line is
-        # erased from where it was pressed
+        # erased from where it was pressed; let go, it is read again and awakens as what is left
         lua = load_mod()
         lua.execute(open(os.path.join(MOD, "files", "grimoire.lua"), encoding="utf-8").read())
         lua.execute(R.CARRY_ALL)
@@ -387,12 +390,14 @@ class MarkInTheBook(unittest.TestCase):
         self.assertEqual("", G.globals["witch_notebook.seal_1_draft"])
         self.assertEqual(before, G.globals["witch_notebook.seal_1_strokes"])
         G.right_down = G.right_just_down = True
-        for x, y in strokes[columns[0] - 1]:
+        for i, (x, y) in enumerate(strokes[columns[0] - 1]):
             G.mouse[1], G.mouse[2] = pos.x + x * k, pos.y + y * k
             G.notebook_update()
             G.right_just_down = False
+            if i == len(strokes[columns[0] - 1]) // 2:
+                self.assertEqual("1", G.globals["witch_notebook.seal_1_draft"])
         G.right_down = False; G.notebook_update()
-        self.assertEqual("1", G.globals["witch_notebook.seal_1_draft"])
+        self.assertEqual("", G.globals["witch_notebook.seal_1_draft"])
         self.assertNotEqual(before, G.globals["witch_notebook.seal_1_strokes"])
 
     def test_a_line_drawn_on_a_seal_opens_it(self):

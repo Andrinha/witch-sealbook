@@ -1,4 +1,5 @@
 dofile_once( "data/scripts/lib/utilities.lua" )
+dofile_once( "mods/witch_notebook/files/run_clock.lua" )
 dofile_once( "mods/witch_notebook/files/templates.lua" )
 dofile_once( "mods/witch_notebook/files/dictionary.lua" )
 dofile_once( "mods/witch_notebook/files/resonances.lua" )
@@ -22,6 +23,9 @@ dofile_once( "mods/witch_notebook/files/book_store.lua" )
 dofile_once( "mods/witch_notebook/files/book_mouse.lua" )
 dofile_once( "mods/witch_notebook/files/book_pages.lua" )
 dofile_once( "mods/witch_notebook/files/book_marks.lua" )
+dofile_once( "mods/witch_notebook/files/book_reading.lua" )
+dofile_once( "mods/witch_notebook/files/book_undo.lua" )
+dofile_once( "mods/witch_notebook/files/book_compass.lua" )
 dofile_once( "mods/witch_notebook/files/quire_strap.lua" )
 dofile_once( "mods/witch_notebook/files/quire_strap_world.lua" )
 dofile_once( "mods/witch_notebook/files/spell_notes.lua" )
@@ -47,6 +51,7 @@ ink_create_flasks() -- flasks of every dyed ink
 carriers_create() -- the seal projectiles of every element
 
 function OnPlayerSpawned( player_entity )
+	run_clock_update() -- a game loaded: the run's clock goes on from where it was saved (run_clock.lua)
 	notebook_on_player_spawned( player_entity )
 	ink_on_player_spawned( player_entity )
 	local prepare = EntityGetWithTag( "witch_fluid_prepare" )[1]
@@ -59,6 +64,11 @@ function OnPlayerSpawned( player_entity )
 		local component = EntityGetFirstComponentIncludingDisabled( prepare, "LuaComponent" )
 		if component then EntitySetComponentIsEnabled( prepare, component, true ) end
 	end
+end
+
+-- before the world's frame: the run's clock the effects updated in it read
+function OnWorldPreUpdate()
+	run_clock_update()
 end
 
 function OnWorldPostUpdate()

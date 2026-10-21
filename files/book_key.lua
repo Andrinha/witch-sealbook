@@ -15,7 +15,9 @@ local OTHER_KEYS = {
 	[78] = "Page Down", [79] = "Right", [80] = "Left", [81] = "Down", [82] = "Up",
 	[83] = "Num Lock", [84] = "Numpad /", [85] = "Numpad *", [86] = "Numpad -",
 	[87] = "Numpad +", [88] = "Numpad Enter", [98] = "Numpad 0", [99] = "Numpad .",
+	[224] = "Left Ctrl", [225] = "Left Shift", [226] = "Left Alt", [228] = "Right Ctrl", [229] = "Right Shift", [230] = "Right Alt",
 }
+local TWIN_KEYS = { [224] = 228, [228] = 224, [225] = 229, [229] = 225, [226] = 230, [230] = 226 } -- Ctrl, Shift, Alt: either
 for code = 58, 69 do KEY_NAMES[code] = "F" .. ( code - 57 ) end
 for code = 89, 97 do KEY_NAMES[code] = "Numpad " .. ( code - 88 ) end
 for code, name in pairs( OTHER_KEYS ) do KEY_NAMES[code] = name end
@@ -32,6 +34,32 @@ end
 -- the keys that turn the pages back and on (the arrows always turn them too)
 function book_turn_keys()
 	return key_setting( "turn_back_key", 4 ), key_setting( "turn_on_key", 7 ) -- A, D
+end
+
+-- Ctrl + this key takes back the last change on the pages (notebook.lua witch_notebook_undo)
+function book_undo_key()
+	return key_setting( "undo_key", 29 ) -- Z
+end
+
+-- Ctrl (either) and the undo key pressed this frame
+function book_undo_pressed()
+	return ( InputIsKeyDown( 224 ) or InputIsKeyDown( 228 ) ) and InputIsKeyJustDown( book_undo_key() ) -- Key_LCTRL, Key_RCTRL
+end
+
+-- held, the pen draws with the compass (book_compass.lua); a Ctrl, Shift or Alt on either side of the keyboard
+function book_compass_key()
+	return key_setting( "compass_key", 225 ) -- Left Shift
+end
+
+function book_compass_held()
+	local key = book_compass_key()
+	return InputIsKeyDown( key ) or ( TWIN_KEYS[key] ~= nil and InputIsKeyDown( TWIN_KEYS[key] ) )
+end
+
+-- the compass key's name in the hints: "Shift" for either Shift
+function book_compass_key_name()
+	local key = book_compass_key()
+	return TWIN_KEYS[key] and ( KEY_NAMES[key]:gsub( "^%a+ ", "" ) ) or book_key_name( key )
 end
 
 -- RMB with a book in hand opens it (on unless the setting is switched off)

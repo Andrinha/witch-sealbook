@@ -42,12 +42,15 @@ local function sign_works( key, element, carrier, own )
 	return dictionary_behavior_works( key, carrier, own )
 end
 
--- The symbols a seal fails on: their strokes, for the book to mark on the page (seal.trouble, notebook.lua)
-local function trouble( seal, symbols )
+-- The symbols a seal fails on: their strokes, for the book to mark on the page (seal.trouble, notebook.lua). 'doubt':
+-- the witch marking what it is would make it read - one symbol alone is the seal's doubt (seal.doubt: its strokes), the
+-- book tells what it looks most like (book_reading.lua)
+local function trouble( seal, symbols, doubt )
 	seal.trouble = {}
 	for _, symbol in ipairs( symbols ) do
 		for _, stroke in ipairs( symbol.strokes or {} ) do seal.trouble[#seal.trouble + 1] = stroke end
 	end
+	seal.doubt = doubt and #symbols == 1 and symbols[1].strokes or nil
 end
 -- ... the weak half of them (but those the witch marked: she said what they are)
 local function weak_symbols( seal )
@@ -86,7 +89,7 @@ function compile_spell( seal )
 				return nil, "A sign is too small"
 			end
 			if symbol.score < SEAL_GOOD_SCORE and symbol.margin and symbol.margin < SIGN_MIN_MARGIN and not wiki_seal() then
-				trouble( seal, { symbol } )
+				trouble( seal, { symbol }, true )
 				return nil, "A sign is ambiguous"
 			end
 			signs[#signs + 1] = symbol
@@ -99,7 +102,7 @@ function compile_spell( seal )
 			if symbol.score >= least or symbol.marked then strong = true; break end
 		end
 		if not strong then
-			trouble( seal, specials )
+			trouble( seal, specials, true )
 			return nil, "The sigil is too faint"
 		end
 	end
@@ -381,15 +384,15 @@ function compile_spell( seal )
 			for _, symbol in ipairs( sigils ) do
 				if not symbol.marked then unmarked[#unmarked + 1] = symbol end
 			end
-			trouble( seal, unmarked )
+			trouble( seal, unmarked, true )
 			return nil, "The sigil is too imprecise"
 		end
 		if checked_quality - complexity_cost < MIN_SYMBOL_QUALITY then
-			trouble( seal, weak_symbols( seal ) )
+			trouble( seal, weak_symbols( seal ), true )
 			return nil, "The symbols are too imprecise"
 		end
 		if reading_quality < MIN_READING_QUALITY then
-			trouble( seal, weak_symbols( seal ) )
+			trouble( seal, weak_symbols( seal ), true )
 			return nil, "The seal is too imprecise"
 		end
 	end

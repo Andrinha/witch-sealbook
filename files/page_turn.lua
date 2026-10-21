@@ -16,7 +16,8 @@ local D = BookDraw
 
 T.LAG = 0.36          -- how far behind its free edge the paper near the hinge turns (a share of the turn)
 T.PERSPECTIVE = 0.1   -- how much bigger the lifted paper looks
-local CURL_DOT_STEP = 0.8 -- the pen's dots on a turning page, a little fewer
+local CURL_DOT_STEP = 0.8 -- the pen's dots on a turning page, a little fewer ...
+local CURL_DOT_GAP = 0.7  -- ... and none closer to the last one drawn than a flat page has them (gui units on the screen)
 
 -- the screen point 'a' along the axis from the hinge and 'c' across it
 local function screen( view, a, c )
@@ -198,6 +199,9 @@ function Curl:dot( px, py, color, alpha )
 	local i = self:locate( px, py )
 	if not self:seen( i ) then return end
 	local x, y = self:map( px, py )
+	-- where the paper turns edge-on the dots crowd together: one this close to the last drawn adds nothing to the line
+	if self.last_x and ( x - self.last_x ) ^ 2 + ( y - self.last_y ) ^ 2 < CURL_DOT_GAP ^ 2 then return end
+	self.last_x, self.last_y = x, y
 	local c = self:shade( color, i )
 	GuiZSetForNextWidget( D.gui(), self:zc( i ) )
 	GuiColorSetForNextWidget( D.gui(), c[1], c[2], c[3], alpha or 1 )

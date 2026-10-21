@@ -870,10 +870,12 @@ end
 -- The forbidden: magic on the body. The Knights Moralis come for whoever casts it (Stevari, the Holy Mountain's
 -- guardians, stand in for them)
 local KNIGHTS_VAR = "witch_notebook.knights_next"
+local KNIGHTS_PAUSE = 60 * 120 -- frames before they come again
 local function forbidden_price( ctx )
-	local now = ctx.frame
-	if now < ( tonumber( GlobalsGetValue( KNIGHTS_VAR, "0" ) ) or 0 ) then return end
-	GlobalsSetValue( KNIGHTS_VAR, tostring( now + 60 * 120 ) )
+	local now = ctx.frame -- the run's clock (run_clock.lua); a wait longer than the pause was set before it: it is over
+	local next_time = tonumber( GlobalsGetValue( KNIGHTS_VAR, "0" ) ) or 0
+	if now < next_time and next_time - now <= KNIGHTS_PAUSE then return end
+	GlobalsSetValue( KNIGHTS_VAR, tostring( now + KNIGHTS_PAUSE ) )
 	GamePrintImportant( "Forbidden Magic", "The Knights Moralis are coming for you" )
 	effect_spawn( "knights", "come", ctx.x, ctx.y, { owner = ctx.shooter, delay = 240 } )
 end
@@ -936,7 +938,7 @@ local function item_var( item, name )
 end
 
 -- The holder clicked with a book in hand: its active page casts, as often as the book's delay allows (the Palm Quire
--- strapped to the hand casts quickly, the heavy Great Tome slowly)
+-- strapped to the hand casts quickly, the heavy Great Tome slowly). 'frame': the run's clock (run_clock.lua run_frame).
 function spellbook_use( item, holder, controls, frame )
 	local next_var = item_var( item, SPELLBOOK_NEXT_CAST_VAR )
 	local book = BOOKS[book_key_of( item )]
@@ -946,7 +948,7 @@ function spellbook_use( item, holder, controls, frame )
 		return
 	end
 	if not next_var then return end
-	-- a wait longer than the book last set is left from another session (the frame count starts again): it is over
+	-- a wait longer than the book last set was counted before the run's clock (a game saved by an older version): it is over
 	local ready = ComponentGetValue2( next_var, "value_int" )
 	if ready - frame > math.max( ComponentGetValue2( next_var, "value_float" ) or 0, book.cast_delay ) then
 		ComponentSetValue2( next_var, "value_int", frame )
@@ -960,8 +962,8 @@ function spellbook_use( item, holder, controls, frame )
 		end
 		return
 	end
-	-- the quill of water (Wand of Water) draws with the button while it lasts
-	if frame < ( tonumber( GlobalsGetValue( BUSY_VAR, "0" ) ) or 0 ) then return end
+	-- the quill of water (Wand of Water) draws with the button while it lasts (effects/lib.lua)
+	if book_busy( frame ) then return end
 	-- the stronger the seal, the longer it recharges; the swift ink casts more often
 	local delay = seal_cast_delay( book, parse_spell_data( data ) )
 	ComponentSetValue2( next_var, "value_int", frame + delay )

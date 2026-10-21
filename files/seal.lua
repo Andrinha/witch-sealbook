@@ -2225,7 +2225,8 @@ local function parse_with( strokes, noise )
 				seal.lines = ( seal.lines or 0 ) + 1
 				for _, stroke in ipairs( group.strokes ) do lines[#lines + 1] = stroke end
 			else
-				seal.trouble = group.strokes
+				-- marked as what it is, it would read: the book tells what it looks most like (seal_spell.lua trouble)
+				seal.trouble, seal.doubt = group.strokes, group.strokes
 				return nil, "A sign inside the ring is not recognized", seal
 			end
 		end
@@ -2266,5 +2267,5 @@ end
 
 -- What the seal's other files share with this one (seal_canon.lua, seal_spell.lua)
 SealRead = { find_ring = find_ring, bbox = bbox, recognize_symbol = recognize_symbol, sigil_score = sigil_score, clamp = clamp,
-	round2 = round2,
+	round2 = round2, template_sets = template_sets,
 	MAX_ROUNDNESS = MAX_ROUNDNESS, STRONG_SIGIL = STRONG_SIGIL, SPAN = SPAN, FRAME_SCORE = FRAME_SCORE }

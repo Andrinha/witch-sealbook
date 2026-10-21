@@ -3,8 +3,10 @@
 dofile_once( "mods/witch_notebook/files/behaviors/hit_lib.lua" )
 
 local e = GetUpdatedEntityID()
-local now = GameGetFrameNum()
-if now < ( hit_var( e, "witch_sentry_next" ) or 0 ) then return end
+local now = run_frame() -- the run's clock, which goes on across Save & Quit (run_clock.lua)
+local next_shot, every = hit_var( e, "witch_sentry_next" ) or 0, hit_var( e, "witch_sentry_every" ) or 45
+-- (a wait longer than its pause was counted before the run's clock: it is over)
+if now < next_shot and next_shot - now <= every then return end
 local reach = RESONANCE_AMOUNTS.sentry( 0 ).reach
 local x, y = EntityGetTransform( e )
 local shooter = hit_shooter( e )
@@ -20,5 +22,5 @@ local element = hit_var( e, "witch_sentry_element" ) or "light"
 if not DICTIONARY_LOOKS[element] then element = "light" end
 local shot = EntityLoad( carrier_file( element, "bolt" ), x, y )
 GameShootProjectile( shooter, x, y, bx, by, shot, true )
-effect_set( e, "witch_sentry_next", now + ( hit_var( e, "witch_sentry_every" ) or 45 ) )
+effect_set( e, "witch_sentry_next", now + every )
 fx_ring( x, y, 4, effect_color( element, 0.8 ), 8, 20, 0.2 )

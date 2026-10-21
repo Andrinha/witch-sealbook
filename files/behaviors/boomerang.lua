@@ -10,13 +10,16 @@ local e = GetUpdatedEntityID()
 local vel = EntityGetFirstComponent( e, "VelocityComponent" )
 local proj = EntityGetFirstComponent( e, "ProjectileComponent" )
 if not vel or not proj then return end
-local now = GameGetFrameNum()
+local now = run_frame() -- the run's clock, which goes on across Save & Quit (run_clock.lua)
 local vx, vy = ComponentGetValue2( vel, "mVelocity" )
 local born = hit_var( e, "witch_boomerang_born" )
 if not born or born == 0 then
 	born = now
 	effect_set( e, "witch_boomerang_born", now )
 	effect_set( e, "witch_boomerang_speed", math.sqrt( vx * vx + vy * vy ) )
+elseif born > now then
+	born = now -- counted before the run's clock (a game saved by an older version): it flies out anew
+	effect_set( e, "witch_boomerang_born", now )
 end
 local out = hit_var( e, "witch_boomerang" ) or 30
 local turn = hit_var( e, "witch_boomerang_turn" ) or 1

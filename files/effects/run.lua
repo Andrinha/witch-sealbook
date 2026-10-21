@@ -17,8 +17,10 @@ if not run then
 	EffectProfiler.end_update( profile )
 	return
 end
-if ( p.born or 0 ) == 0 then
-	p.born = GameGetFrameNum()
+-- born by the run's clock (run_clock.lua); a birth after now was counted before it (a game saved by an older version):
+-- its time starts again
+if ( p.born or 0 ) == 0 or p.born > run_frame() then
+	p.born = run_frame()
 	effect_set( e, "born", p.born )
 end
 local x, y = EntityGetTransform( e )

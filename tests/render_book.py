@@ -116,6 +116,28 @@ class Canvas:
         return path
 
 
+def sample(src, x, y, kx, ky):
+    """An image (h x w x 4) with its top left at x, y on the canvas (pixels, fractional), each texel kx by ky pixels: the
+    pixels whose middles it covers, each sampled bilinearly - as the game's GPU draws the GUI's images: at their place to
+    a fraction of a pixel, the colors of transparent texels blending in (the dark rims of pictures scaled without
+    image_bleed). Returns the patch and its top left pixel, or None."""
+    h, w = src.shape[:2]
+    x0, y0 = int(np.ceil(x - 0.5)), int(np.ceil(y - 0.5))
+    x1, y1 = int(np.floor(x + w * kx - 0.5)), int(np.floor(y + h * ky - 0.5))
+    if x1 < x0 or y1 < y0:
+        return None, 0, 0
+    u = (np.arange(x0, x1 + 1) + 0.5 - x) / kx - 0.5  # texel coordinates of the pixels' middles, texel middles at whole numbers
+    v = (np.arange(y0, y1 + 1) + 0.5 - y) / ky - 0.5
+    u = np.clip(u, 0, w - 1)
+    v = np.clip(v, 0, h - 1)
+    u0, v0 = np.floor(u).astype(int), np.floor(v).astype(int)
+    u1, v1 = np.minimum(u0 + 1, w - 1), np.minimum(v0 + 1, h - 1)
+    fu, fv = (u - u0)[None, :, None], (v - v0)[:, None, None]
+    top = src[v0][:, u0] * (1 - fu) + src[v0][:, u1] * fu
+    bottom = src[v1][:, u0] * (1 - fu) + src[v1][:, u1] * fu
+    return top * (1 - fv) + bottom * fv, x0, y0
+
+
 def abgr_to_rgba(c):
     c = int(c) & 0xFFFFFFFF
     return (c & 255, (c >> 8) & 255, (c >> 16) & 255, (c >> 24) & 255)
@@ -177,13 +199,11 @@ class Book:
             tint = np.array([color[1], color[2], color[3], color[4]], np.float32) if color else np.ones(4, np.float32)
             if d["kind"] == "image":
                 src = self.image(d["file"])
-                h, w = src.shape[:2]
-                tw, th = max(1, int(round(w * abs(d["sx"]) * s))), max(1, int(round(h * abs(d["sy"]) * s)))
-                ys = (np.arange(th) * h / th).astype(int)
-                xs = (np.arange(tw) * w / tw).astype(int)
-                part = src[ys][:, xs] * tint
-                part[..., 3] *= float(d["alpha"])
-                cv.blend(part, float(d["x"]) * s, float(d["y"]) * s)
+                part, px, py = sample(src, float(d["x"]) * s, float(d["y"]) * s, abs(float(d["sx"])) * s, abs(float(d["sy"])) * s)
+                if part is not None:
+                    part = part * tint
+                    part[..., 3] *= float(d["alpha"])
+                    cv.blend(part, px, py)
             else:
                 x = float(d["x"])
                 k = float(d["scale"] or 1)

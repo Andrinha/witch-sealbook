@@ -31,7 +31,7 @@ MODES.cast = function( e, p, age, x, y )
 	local ox, oy = EntityGetTransform( owner )
 	local aim_x, aim_y = ComponentGetValue2( controls, "mAimingVectorNormalized" )
 	local tx, ty = ComponentGetValue2( controls, "mMousePosition" )
-	cast_spell( owner, without_repetition( parse_spell_data( data ) ), ox, oy - 4, aim_x, aim_y, tx, ty, GameGetFrameNum(), nil, true )
+	cast_spell( owner, without_repetition( parse_spell_data( data ) ), ox, oy - 4, aim_x, aim_y, tx, ty, run_frame(), nil, true )
 	fx_ring( ox, oy - 4, 10, fx_color( "light", 0.7 ), 16, 30, 0.3 )
 end
 

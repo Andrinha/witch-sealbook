@@ -22,6 +22,7 @@ for code, name in pairs( {
 	[78] = "Page Down", [79] = "Right", [80] = "Left", [81] = "Down", [82] = "Up",
 	[83] = "Num Lock", [84] = "Numpad /", [85] = "Numpad *", [86] = "Numpad -",
 	[87] = "Numpad +", [88] = "Numpad Enter", [98] = "Numpad 0", [99] = "Numpad .",
+	[224] = "Left Ctrl", [225] = "Left Shift", [226] = "Left Alt", [228] = "Right Ctrl", [229] = "Right Shift", [230] = "Right Alt",
 } ) do KEY_NAMES[code] = name end
 
 local function key_setting_ui( mod_id, gui, in_main_menu, im_id, setting )
@@ -74,6 +75,22 @@ mod_settings = {
 		ui_name = "Turn page on",
 		ui_description = "Click, then press a key. Right-click to reset to D. Esc cancels.\nThe right arrow and the mouse wheel turn pages too.",
 		value_default = 7,
+		scope = MOD_SETTING_SCOPE_RUNTIME,
+		ui_fn = key_setting_ui,
+	},
+	{
+		id = "undo_key",
+		ui_name = "Undo (with Ctrl)",
+		ui_description = "Ctrl + this key takes back the last line, erasing or marking in the open book.\nClick, then press a key. Right-click to reset to Z. Esc cancels.",
+		value_default = 29,
+		scope = MOD_SETTING_SCOPE_RUNTIME,
+		ui_fn = key_setting_ui,
+	},
+	{
+		id = "compass_key",
+		ui_name = "Compass (hold)",
+		ui_description = "Held while drawing: press where the ring's middle goes and drag out to its size, then press on\nthe circle and draw along it - a true ring. Click, then press a key. Right-click to reset to Left Shift. Esc cancels.",
+		value_default = 225,
 		scope = MOD_SETTING_SCOPE_RUNTIME,
 		ui_fn = key_setting_ui,
 	},

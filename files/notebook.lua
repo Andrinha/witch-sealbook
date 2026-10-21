@@ -7,7 +7,9 @@
 -- Atelier the seal awakens when its ring closes: draw the ring with a gap, the symbols inside, then close the gap - the
 -- seal stays on its page and becomes the book's active one. A click on a seal's page makes it active: the book in hand
 -- casts it, with no limit (spellbook.lua). A/D (configurable), the arrows or the mouse wheel turn the pages; the eraser or right click
--- removes part of a drawing, and the clear button empties the page. The configured key, Esc or a click outside closes it.
+-- removes part of a drawing, the clear button empties the page, Undo or Ctrl+Z takes back the last change (book_undo.lua).
+-- Shift (configurable) held, the pen draws with a compass: a true ring (book_compass.lua). The configured key, Esc or a
+-- click outside closes it.
 -- Drawing spends witch ink (ink.lua): the bottles beside the book are the inks in the flasks, a click picks the one to
 -- draw with, and a seal takes on the inks it is drawn with. Sheets with seals found in the world (sheets.lua) are
 -- pasted in as pages of their own, into a book that holds them. The button over the book opens its other part, the
@@ -17,7 +19,8 @@
 -- to jump to over and under it, and a click makes one the active seal. What a seal does (spell_notes.lua) is written
 -- beside the Test Book's pages, and under the book for a drawn seal under the mouse.
 -- A book's pages are kept in the run's globals by book_store.lua, as text (strokes.lua); the pages that are the same in
--- every run and the pen's kit are in book_pages.lua, the mouse and its calibration in book_mouse.lua.
+-- every run and the pen's kit are in book_pages.lua, the mouse and its calibration in book_mouse.lua. A drawing is read
+-- by book_reading.lua a little each frame, the book open to drawing meanwhile.
 -- The books' look is in book_gfx.lua, a page turning over in page_turn.lua: a book's page turns sideways, the quire's
 -- round leaves flip up over the hinge at their top, onto its lid.
 
@@ -53,13 +56,12 @@ local BUTTON = {
 	RECALIBRATE = 900002, BACK = 900003, ON = 900004, -- 900001 and 900008: the calibration's (book_mouse.lua)
 	TEAR = 900005, -- and the next one for the right page
 	EDIT = 900300, -- and the next one for the right page
-	WIKI = 900007, ERASER = 900009, MARK = 900097, RETRY = 900098, CLEAR = 900099,
+	WIKI = 900007, ERASER = 900009, UNDO = 900096, MARK = 900097, RETRY = 900098, CLEAR = 900099,
 	TAB = 900010, -- and the next ones, a section each
 	BOOK = 900100, -- and the next ones, a book each
 	TEST = 900200, -- and the next ones: the Test Book's groups, then (+20) items, then (+40) parts
 }
 
-local DEBUG_HISTORY = 10 -- recent drawings kept for offline debugging
 local BOOK_GIVEN_FLAG = "witch_notebook_spellbook" -- every run starts with the Spellbook
 local LEARNED_VAR = BOOK_LEARNED_VAR -- the wiki's seals learned (books.lua)
 
@@ -162,7 +164,7 @@ local function show_recharge( player )
 		delay = BOOKS[book_key_of( item )].cast_delay
 		for _, comp in ipairs( EntityGetComponentIncludingDisabled( item, "VariableStorageComponent" ) or {} ) do
 			if ComponentGetValue2( comp, "name" ) == SPELLBOOK_NEXT_CAST_VAR then
-				left = ComponentGetValue2( comp, "value_int" ) - GameGetFrameNum()
+				left = ComponentGetValue2( comp, "value_int" ) - run_frame() -- the run's clock (run_clock.lua)
 				total = ComponentGetValue2( comp, "value_float" ) or 0
 			end
 		end
@@ -218,6 +220,7 @@ end
 local function save_page() S.save_page( cur ) end
 
 local function clear_page()
+	if #cur.edit.strokes > 0 then BookUndo.remember( cur.edit ) end
 	cur.edit.strokes = {}
 	cur.edit.point_count = 0
 	cur.edit.failed = false
@@ -413,18 +416,17 @@ local function with_inks( data, mix )
 	return ( data:gsub( "^([^&]*)", "%1;ink=" .. mix, 1 ) )
 end
 
-local function add_seal( spell )
-	local i = cur.edit.draft == "1" and cur.edit_face - cur.def.intro or #cur.seals + 1
-	local kept = thin_strokes( cur.edit.strokes )
-	cur.seals[i] = { spell = with_inks( spell.data or seal_page_data( spell ), ink_mix_data( ink_shares( cur.edit.strokes ) ) ),
+-- The draft 'page', the book 'st''s page 'i', read as 'spell': the seal on the page
+local function add_seal( st, i, page, spell )
+	local kept = thin_strokes( page.strokes )
+	st.seals[i] = { spell = with_inks( spell.data or seal_page_data( spell ), ink_mix_data( ink_shares( page.strokes ) ) ),
 		name = spell.summary, quality = spell.quality, color = spell.element, strokes = kept, inks = encode_inks( kept ), sheet = "",
 		tier = "", fresh = "", draft = "" }
-	save_seal( cur, i )
+	save_seal( st, i )
 	-- all the pages: a seal awakening on an earlier page (one edited again) keeps the pages after it
-	GlobalsSetValue( book_var( cur.key, "seals" ), tostring( #cur.seals ) )
-	set_active( cur, i )
+	GlobalsSetValue( book_var( st.key, "seals" ), tostring( #st.seals ) )
+	set_active( st, i )
 	if spell.named then learn( spell.named ) end
-	return i
 end
 
 -- The first mark on either blank page turns the pair into drafts; another pair is already ready after it.
@@ -521,7 +523,7 @@ end
 local function edit_seal( i )
 	local seal = cur.seals[i]
 	if not seal or seal.sheet ~= "" then return end
-	seal.draft, seal.fresh, seal.parts, seal.parts_of = "1", "", nil, nil -- put back as it was, it is read again (drawn_parts)
+	seal.draft, seal.fresh, seal.parts, seal.parts_of = "1", "", nil, nil -- put back as it was, it is read again (BookReading.parts)
 	select_edit_page( cur.def.intro + i ) -- a draft now: the page drawn on
 	seal.point_count = 0
 	for _, stroke in ipairs( seal.strokes ) do seal.point_count = seal.point_count + #stroke end
@@ -530,17 +532,12 @@ local function edit_seal( i )
 	save_seal( cur, i )
 end
 
--- a page's lines, how many and their marks: what tells if they changed
-local function page_look( page )
-	return #page.strokes .. "|" .. page.point_count .. "|" .. strokes_encode_marks( page.strokes )
-end
-
 -- A drawn seal opened by a tool (open_seal) and left as it was - nothing marked, drawn or erased - awakens again as it
 -- was when the witch leaves it (another seal opened, the book put away): the book casts it as before
 local function put_back_opened()
 	local opened = cur.opened
 	cur.opened = nil
-	if not opened or opened.seal.draft ~= "1" or page_look( opened.seal ) ~= opened.look then return end
+	if not opened or opened.seal.draft ~= "1" or BookReading.look( opened.seal ) ~= opened.look then return end
 	local i -- pages torn out before it moved it up
 	for j, seal in ipairs( cur.seals ) do
 		if seal == opened.seal then i = j end
@@ -564,7 +561,7 @@ local function open_seal( i, marking )
 	put_back_opened()
 	local active = cur.active == i
 	edit_seal( i )
-	cur.opened = { seal = seal, active = active, look = page_look( seal ) }
+	cur.opened = { seal = seal, active = active, look = BookReading.look( seal ) }
 	note = { text = marking and ( "Marking " .. seal.name .. ": circle the lines the book misread." )
 		or ( "Editing " .. seal.name .. ": it awakens again when its ring is closed." ), frames = NOTE_FRAMES }
 end
@@ -599,7 +596,7 @@ local function turn_pages( by )
 	local to = math.max( 1, math.min( last_spread(), cur.spread + queued + by ) )
 	if to == cur.spread + queued then return end
 	queued = to - cur.spread
-	is_drawing = false -- a line being drawn just ends
+	is_drawing, BookCompass.gesture = false, nil -- a line being drawn just ends
 	tear = nil
 end
 
@@ -699,7 +696,7 @@ local function toggle_wiki()
 	cur.spread = wiki and cur.wiki_spread or cur.own_spread
 	cur.spread = math.max( 1, math.min( cur.spread, last_spread() ) )
 	flips, queued, drag, tear, hover_entry = {}, 0, nil, nil, nil
-	is_drawing = false
+	is_drawing, BookCompass.gesture = false, nil
 	K.lasso, K.menu = nil, nil
 end
 
@@ -710,7 +707,7 @@ local function put_away()
 	if wiki and not cur.def.test then toggle_wiki() end
 	cur.spread = cur.spread + queued
 	flips, queued, drag = {}, 0, nil
-	is_drawing = false -- a line being drawn just ends; it doesn't awaken the seal
+	is_drawing, BookCompass.gesture = false, nil -- a line being drawn just ends; it doesn't awaken the seal
 	cur.erase_last_x, cur.erase_last_y = nil, nil
 	K.lasso, K.menu = nil, nil
 	put_back_opened()
@@ -723,6 +720,7 @@ end
 -- 'key' is opened: the first time, at its beginning, and it turns through its first pages to the blank one
 local function open_book( key )
 	cur = load_book( key )
+	BookReading.resume( cur ) -- a page left being read when the game was saved
 	GlobalsSetValue( BOOK_OPEN_VAR, key )
 	wiki = cur.def.test == true
 	cur.spread = math.max( 1, math.min( cur.spread, last_spread() ) )
@@ -755,34 +753,8 @@ end
 
 ---- drawing seals ----
 
--- Every recognized drawing is kept in the run's globals, which the game saves in world_state.xml (Save & Quit):
--- python tests/debug_sigil.py reads them back and explains the recognition
-local function record_drawing( result_text )
-	local n = ( tonumber( GlobalsGetValue( "witch_notebook.debug_next", "0" ) ) or 0 ) + 1
-	GlobalsSetValue( "witch_notebook.debug_next", tostring( n ) )
-	local data = "n=" .. n .. ";frame=" .. GameGetFrameNum() .. ";book=" .. cur.key .. ";result=" .. result_text .. ";strokes=" .. encode_strokes( cur.edit.strokes )
-	-- what the witch marked lines as: the book's misreadings, told by the player
-	local marks = strokes_encode_marks( cur.edit.strokes )
-	if marks ~= "" then data = data .. ";marks=" .. marks end
-	GlobalsSetValue( "witch_notebook.debug_" .. ( ( n - 1 ) % DEBUG_HISTORY + 1 ), data )
-end
-
--- a wiki's seal too great for the open book's pages: why it doesn't awaken
-local function too_great( spell )
-	local entry = spell and spell.named and GRIMOIRE_BY_KEY and GRIMOIRE_BY_KEY[spell.named]
-	local need = entry and seal_book( entry )
-	if need and not book_holds( cur.key, need ) then
-		return "Too great for the " .. cur.def.name .. ": " .. book_named( need ) .. " holds it"
-	end
-end
-
--- where an angle on the page points (radians, 0: right, y down), in words
-local DIRECTIONS = { "on the right", "at the bottom right", "at the bottom", "at the bottom left", "on the left", "at the top left",
-	"at the top", "at the top right" }
-local function direction_name( angle )
-	return DIRECTIONS[math.floor( angle / ( math.pi / 4 ) + 0.5 ) % 8 + 1]
-end
-
+-- The drawing on the page drawn on is read, in the background (book_reading.lua) - the page open to drawing, erasing and
+-- turning meanwhile: its seal awakens, or the book tells what is wrong (BookReading.on_read, below)
 local function finish_sigil()
 	local minx, miny, maxx, maxy = math.huge, math.huge, -math.huge, -math.huge
 	for _, stroke in ipairs( cur.edit.strokes ) do
@@ -796,47 +768,45 @@ local function finish_sigil()
 		result = { text = "The seal is too small - edit the drawing", frames = RESULT_FRAMES }
 		return
 	end
+	result = nil
+	BookReading.read( cur, cur.edit )
+end
 
-	-- one of the wiki's seals is known at a glance, as a whole (and casts as the wiki's spell); any other seal is read
-	-- symbol by symbol (seal_spell.lua)
-	local spell, err, seal = read_spell( cur.edit.strokes )
-	err = too_great( spell ) or err
-	if err and spell then spell = nil end
-	-- the strokes it couldn't read stay marked until the seal is read again
-	for _, stroke in ipairs( cur.edit.strokes ) do stroke.trouble = nil end
-	cur.edit.marked = nil
-	if not spell and seal and seal.trouble and #seal.trouble > 0 then
-		for _, stroke in ipairs( seal.trouble ) do stroke.trouble = true end
-		cur.edit.marked = true
-	end
-	record_drawing( spell and ( spell.summary .. " / " .. ( spell.data or serialize_spell( spell ) ) ) or err )
-	if spell then
-		-- the seal stays on its page, a blank page follows; on it the seal awakens
-		local tree = seal or parse_seal( cur.edit.strokes )
-		local state = awaken_new( cur.edit.strokes, tree, spell.element )
-		local i = add_seal( spell )
-		-- what its parts were read as, to show them under the mouse (draw_parts); a wiki's seal as its pages are told
-		if tree then
-			local entry = spell.named and GRIMOIRE_BY_KEY and GRIMOIRE_BY_KEY[spell.named]
-			cur.seals[i].parts = entry and seal_parts( cur.edit.strokes, tree, entry ) or tree.symbols
-			cur.seals[i].parts_of, cur.seals[i].parts_data = cur.seals[i].strokes, cur.seals[i].spell:match( "^[^&]*" ) or ""
+-- A reading done, of the book 'st''s draft 'page' (it may lie in a book put away or another one open): the seal stays on
+-- its page and awakens, the pen goes on to the blank page after it; or the book tells what it fails on. The pages turned
+-- away from it meanwhile, or another drawn on, the book tells it under it.
+BookReading.on_read = function( job, out )
+	local st, page, spell = job.st, job.page, out.spell
+	local face = st.def.intro + job.index
+	local back, front = spread_faces( cur.spread )
+	local away = st == cur and is_open and ( wiki or turning() or ( face ~= back and face ~= front ) )
+	if not spell then
+		page.failed = true
+		if st == cur and cur.edit == page and not away then result = { text = out.err, frames = RESULT_FRAMES }
+		elseif st == cur and is_open then
+			note = { text = "A seal drawn before does not awaken: " .. out.err:gsub( "^%u", string.lower ) .. ".", frames = NOTE_FRAMES }
 		end
-		awakening = { page = cur.def.intro + i, state = state }
-		-- a resonance drawn for the first time (resonances.lua): the witch has found something new
-		local resonance = spell.resonance and not spell.named and RESONANCE_BY_KEY[spell.resonance]
-		if resonance and resonance_discover( resonance.key ) then
-			GamePrintImportant( "A resonance: " .. resonance_title( resonance, spell.element ), ( resonance.text:gsub( "^%l", string.upper ) ) )
-		end
-		if cur.edit == cur.blank or cur.edit == cur.blank_next then clear_page() end
-		select_edit_page( blank_page() )
-		save_page()
-	else
-		cur.edit.failed = true
-		-- an open ring: where its gap is (its strokes are marked)
-		local gap = not spell and seal and seal.gap_at
-		if gap then err = err .. " - its gap is " .. direction_name( gap ) end
-		result = { text = err, frames = RESULT_FRAMES }
+		return
 	end
+	local cast_before, wiki_before = st.seals[st.active], st.active_wiki
+	add_seal( st, job.index, page, spell )
+	-- what its parts were read as, to show them under the mouse (draw_parts); a wiki's seal as its pages are told
+	local seal = st.seals[job.index]
+	-- Undo takes back the change it awoke from: the page's changes go on with the seal (and the compass set on it), and
+	-- what the book cast before is kept to cast again (witch_notebook_undo)
+	seal.undo, seal.compass = page.undo, page.compass
+	st.awoke = { seal = seal, at = BookUndo.now(), active = cast_before, wiki = wiki_before }
+	if out.tree then seal.parts, seal.parts_of, seal.parts_data = out.parts, seal.strokes, seal.spell:match( "^[^&]*" ) or "" end
+	if st == cur and is_open then awakening = { page = face, state = out.state } end
+	if away then note = { text = seal.name .. " awakens on its page.", frames = NOTE_FRAMES } end
+	-- a resonance drawn for the first time (resonances.lua): the witch has found something new
+	local resonance = spell.resonance and not spell.named and RESONANCE_BY_KEY[spell.resonance]
+	if resonance and resonance_discover( resonance.key ) then
+		GamePrintImportant( "A resonance: " .. resonance_title( resonance, spell.element ), ( resonance.text:gsub( "^%l", string.upper ) ) )
+	end
+	if st == cur and cur.edit == page then select_edit_page( blank_page() )
+	elseif st.edit == page then st.edit, st.edit_face = st.blank, st.def.intro + #st.seals + 1 end
+	S.save_page( st )
 end
 
 -- Returns the length of line added
@@ -861,6 +831,23 @@ local function add_point( stroke, x, y, final )
 	cur.edit.point_count = cur.edit.point_count + 1
 	promote_blank()
 	return d
+end
+
+-- The line drawn goes on to x, y - one begun if none is (the page as it was is kept for Undo); the ink it takes is spent
+local function pen_to( x, y, player )
+	if not is_drawing then
+		result = nil
+		BookUndo.remember( cur.edit )
+		cur.edit.strokes[#cur.edit.strokes + 1] = { ink = selected_ink }
+		is_drawing = true
+	end
+	ink_debt = ink_debt + add_point( cur.edit.strokes[#cur.edit.strokes], x, y ) * INK_PER_UNIT
+	if ink_debt >= 1 then
+		local spent = ink_spend( player, math.floor( ink_debt ), cur.edit.strokes[#cur.edit.strokes].ink )
+		ink_debt = ink_debt - spent
+		amounts[selected_ink] = ( amounts[selected_ink] or 0 ) - spent
+		if spent < 1 then amounts[selected_ink] = 0 end -- the flasks ran dry
+	end
 end
 
 local function end_stroke()
@@ -901,7 +888,8 @@ function witch_notebook_finish_erase()
 				frames = NOTE_FRAMES }
 		end
 	end
-	if not seal_ring_closed( kept ) then page.failed = false end
+	-- the drawing changed: with its ring closed it is read again, as after a line drawn
+	if seal_ring_closed( kept ) then finish_sigil() else page.failed = false end
 	if page.draft == "1" then save_seal( cur, cur.edit_face - cur.def.intro ) end
 end
 
@@ -945,6 +933,7 @@ function witch_notebook_erase_at( x, y, from_x, from_y )
 							local t = length2 > 0 and math.max( 0, math.min( 1, ( ( p.x - from_x ) * dx + ( p.y - from_y ) * dy ) / length2 ) ) or 0
 							local ex, ey = from_x + t * dx, from_y + t * dy
 							if ( p.x - ex ) ^ 2 + ( p.y - ey ) ^ 2 <= ERASER_RADIUS ^ 2 then
+								if not cur.edit.erase_dirty then BookUndo.remember( cur.edit ) end -- as it was before this erasing
 								p.erased = true
 								cur.edit.point_count = cur.edit.point_count - 1
 								cur.edit.erase_dirty = true
@@ -964,6 +953,7 @@ end
 -- closed is read again at once
 local function mark_lines( item, menu )
 	if menu.page ~= cur.edit then return end
+	BookUndo.remember( cur.edit )
 	local mark = item and { kind = item.kind, key = item.key } or nil
 	for _, stroke in ipairs( menu.strokes ) do stroke.mark = mark end
 	if cur.edit.draft == "1" then save_seal( cur, cur.edit_face - cur.def.intro ) else save_page() end
@@ -976,6 +966,62 @@ local function mark_lines( item, menu )
 end
 K.on_pick = mark_lines
 K.tell = function( text ) result = text and { text = text, frames = RESULT_FRAMES } or nil end
+
+---- taking back (book_undo.lua) ----
+
+-- The page Undo takes back on: of the pages on view, the one changed last - a draft, or the seal that awoke last, the
+-- change it awoke from taken back with it. Nil: nothing to take back.
+local function undo_page()
+	local back, front = spread_faces( cur.spread )
+	local page, face, at = nil, nil, 0
+	for _, f in ipairs( { back, front } ) do
+		local p = f > 0 and editable_page( f )
+		if p and BookUndo.last( p ) > at then page, face, at = p, f, BookUndo.last( p ) end
+	end
+	local awoke = cur.awoke
+	if awoke and awoke.at > at and BookUndo.last( awoke.seal ) > 0 then
+		for i, seal in ipairs( cur.seals ) do
+			local f = cur.def.intro + i
+			if seal == awoke.seal and seal.draft ~= "1" and ( f == back or f == front ) then page, face = seal, f end
+		end
+	end
+	return page, face
+end
+
+-- Undo (the button under Mark, Ctrl+Z): the page changed last goes back to how it was before that change - a seal that
+-- awoke from it is a draft again, and the book casts what it cast before. A drawing whose ring is still closed is read
+-- again, as after any change. notebook_update reaches this by its global name.
+function witch_notebook_undo()
+	if wiki or turning() or K.menu or K.lasso then return end
+	witch_notebook_finish_erase()
+	local page, face = undo_page()
+	if not page then return end
+	-- the line being drawn is what is taken back: the button held draws nothing more till it is let go
+	if is_drawing then is_drawing, wait_release = false, true end
+	local i = face - cur.def.intro
+	if page.draft ~= "1" then
+		local awoke = cur.awoke
+		cur.awoke = nil
+		page.draft, page.fresh, page.parts, page.parts_of = "1", "", nil, nil
+		if awakening and awakening.page == face then awakening = nil end
+		if cur.active == i then
+			local before = 0
+			for j, seal in ipairs( cur.seals ) do
+				if seal == awoke.active and seal.draft ~= "1" then before = j end
+			end
+			set_active( cur, before )
+			if before == 0 and awoke.wiki ~= "" and wiki_lookup( cur, awoke.wiki ) then set_active_wiki( cur, awoke.wiki ) end
+		end
+	end
+	select_edit_page( face )
+	page.strokes = BookUndo.take( page )
+	page.point_count = 0
+	for _, stroke in ipairs( page.strokes ) do page.point_count = page.point_count + #stroke end
+	page.erase_index, page.erase_dirty, page.marked = nil, nil, nil
+	result = nil
+	if seal_ring_closed( page.strokes ) then finish_sigil() else page.failed = false end
+	if page.draft == "1" then save_seal( cur, i ) else save_page() end
+end
 
 ---- where the open book lies ----
 
@@ -1067,10 +1113,39 @@ function witch_notebook_line_on_seal( mx, my )
 	local x, y = on.x - pos.x, on.y - pos.y
 	if on.erase then
 		cur.erase_last_x, cur.erase_last_y = x, y -- the eraser sweeps on from there
+	elseif book_compass_held() then
+		BookCompass.press( cur.edit, x, y ) -- the compass from there (witch_notebook_pen)
 	elseif drawable( x, y ) and ( amounts[selected_ink] or 0 ) >= 1 then
-		cur.edit.strokes[#cur.edit.strokes + 1] = { ink = selected_ink }
-		add_point( cur.edit.strokes[#cur.edit.strokes], x, y )
-		is_drawing, result = true, nil
+		pen_to( x, y, get_player() )
+	end
+end
+
+-- The pen on the page drawn on at x, y (page units; 'inside': where it draws, 'ink': how much is left of the ink chosen):
+-- a line while the left button is held - with the compass key held, the compass's (book_compass.lua): set from the
+-- ring's middle, or a line along its circle wherever the mouse goes. notebook_update reaches this by its global name.
+function witch_notebook_pen( x, y, inside, ink, player )
+	local C = BookCompass
+	local down = not cur.eraser_selected and not cur.marker_selected and InputIsMouseButtonDown( MOUSE_LEFT ) and not wait_release
+	if C.gesture and C.gesture.page ~= cur.edit then C.gesture = nil end
+	if not C.gesture and down and inside and not is_drawing and book_compass_held() then C.press( cur.edit, x, y ) end
+	if C.gesture then
+		if not down then
+			C.release()
+			if is_drawing then end_stroke() end
+			return
+		end
+		for _, p in ipairs( C.drag( x, y ) or {} ) do
+			-- off the paper or out of ink the line stops; it goes on where it can again
+			if drawable( p.x, p.y ) and ( amounts[selected_ink] or 0 ) >= 1 then pen_to( p.x, p.y, player )
+			elseif is_drawing then end_stroke() end
+		end
+		return
+	end
+	if down and inside and ink >= 1 then
+		pen_to( x, y, player )
+	elseif is_drawing then
+		if inside and #cur.edit.strokes > 0 then add_point( cur.edit.strokes[#cur.edit.strokes], x, y, true ) end
+		end_stroke() -- released the button, left the page or ran out of ink
 	end
 end
 
@@ -1263,26 +1338,6 @@ local function wiki_parts( entry )
 	return parts
 end
 
--- The parts of a seal drawn in the book: the reading made when it awoke (finish_sigil); a page from before (a saved run)
--- is read again - kept only if it reads as the same element, its saved points being rounded. A wiki's seal drawn by
--- hand is told the way its grimoire page is (seal.lua seal_parts).
-local function drawn_parts( seal, data )
-	if seal.parts_of == seal.strokes and seal.parts_data == data then return seal.parts end
-	local named = data:match( "named=([%w_]+)" )
-	local entry = named and GRIMOIRE_BY_KEY and GRIMOIRE_BY_KEY[named]
-	local ok, tree, _, partial = pcall( parse_seal, seal.strokes )
-	tree = ok and ( tree or ( entry and partial ) ) or nil
-	local parts = {}
-	if entry then
-		parts = seal_parts( seal.strokes, tree, entry )
-	elseif tree then
-		local same = compile_spell( tree )
-		if same and same.element == data:match( "element=([%w_]+)" ) then parts = tree.symbols end
-	end
-	seal.parts, seal.parts_of, seal.parts_data = parts, seal.strokes, data
-	return parts
-end
-
 -- 'parts' of a seal of spell 'data' on the surface 's', the mouse at 'px', 'py' on the page; 'frame': where the parts'
 -- strokes lie on the page ({ c, k, to }: page = to + ( point - c ) * k; nil: page units); 'named': a wiki's seal, its
 -- name - a part of kind 'mark' (grimoire_parts.lua) is one of its own glyphs, not in the book's lists
@@ -1391,10 +1446,26 @@ local function draw_page( face, pos, mx, my, still )
 		if result and face == cur.edit_face then
 			if view.labels then paragraph( label.x, label.y, label.w, result.text, { 0.95, 0.4, 0.3 } )
 			else centered_on( s, size - 19, result.text, ERROR_COLOR ) end
+		elseif BookReading.reading( editable_page( face ) ) then
+			-- it awakens, or tells what is wrong, in a moment (book_reading.lua)
+			if view.labels then paragraph( label.x, label.y, label.w, "Reading the seal...", NOTE_COLOR )
+			else centered_on( s, size - 19, "Reading the seal...", NOTE_COLOR ) end
 		elseif #editable_page( face ).strokes == 0 then
 			local str = "New seal"
 			if cur.def.round then s:text( ( size - GuiGetTextDimensions( gui, str ) ) / 2, 14, str, NOTE_COLOR )
 			else s:text( cur.look.label.x, cur.look.label.y, str, NOTE_COLOR ) end
+		end
+		-- a seal that failed on one symbol: what it looks most like, and [Mark] - while its lines stay as they were
+		local page = editable_page( face )
+		if face == cur.edit_face and page.doubt and page.doubt.look == BookReading.look( page ) and not BookReading.reading( page )
+			and not K.menu and not K.lasso and not is_drawing and not BookCompass.gesture then
+			K.draw_doubt( s, page, face, pos, mx - pos.x, my - pos.y, size )
+		end
+		-- the compass in hand (its key held with the pen) or at work: where it stands and its circle (book_compass.lua)
+		local compass = BookCompass.gesture
+		if compass and compass.page == editable_page( face ) or not compass and book_compass_held() and not cur.eraser_selected
+			and not cur.marker_selected and not K.menu and over_page( pos, mx, my ) then
+			BookCompass.draw( s, editable_page( face ), mx - pos.x, my - pos.y, drawable )
 		end
 		-- with "Mark" chosen: what the marked lines under the mouse are marked as
 		if cur.marker_selected and not K.menu and not K.lasso and over_page( pos, mx, my ) then
@@ -1426,7 +1497,8 @@ local function draw_page( face, pos, mx, my, still )
 			hover_seal = seal
 			local named = data:match( "named=([%w_]+)" )
 			named = named and GRIMOIRE_BY_KEY and GRIMOIRE_BY_KEY[named]
-			draw_parts( s, drawn_parts( seal, data ), data, mx - pos.x, my - pos.y, nil, named and named.name )
+			-- as read when it awoke; a page from a saved run is read again in the background (book_reading.lua)
+			draw_parts( s, BookReading.parts( seal, data ) or {}, data, mx - pos.x, my - pos.y, nil, named and named.name )
 		end
 	end
 	local row_y = label.y + ( view.labels and 11 or 0 )
@@ -1544,15 +1616,25 @@ local function draw_ink_panel( mx, my, clicked )
 	if pressed( BUTTON.MARK, y + 12, "Mark" ) then
 		cur.marker_selected, cur.eraser_selected = true, false
 	end
-	local r = notebook_button_rects[BUTTON.MARK]
-	if mx >= r[1] - 2 and mx <= r[1] + r[3] + 2 and my >= r[2] - 2 and my <= r[2] + r[4] + 2 then
+	local function over( id )
+		local r = notebook_button_rects[id]
+		return mx >= r[1] - 2 and mx <= r[1] + r[3] + 2 and my >= r[2] - 2 and my <= r[2] + r[4] + 2
+	end
+	if over( BUTTON.MARK ) then
 		hover_text = "Mark: circle the lines of a sign or sigil the book misreads and pick what it is. How well it is drawn still counts."
+	end
+	-- the last change on the pages on view taken back (witch_notebook_undo): dimmed when there is none
+	local can_undo = not turning() and undo_page() ~= nil
+	GuiColorSetForNextWidget( gui, GREY[1], GREY[2], GREY[3], can_undo and 1 or 0.35 )
+	if pressed( BUTTON.UNDO, y + 24, "Undo" ) and can_undo then witch_notebook_undo() end
+	if over( BUTTON.UNDO ) then
+		hover_text = "Undo (Ctrl+" .. book_key_name( book_undo_key() ) .. "): take back the last line, erasing, marking or Clear on these pages."
 	end
 	local back, front = spread_faces( cur.spread )
 	if not turning() and ( back == cur.edit_face or front == cur.edit_face ) then
-		if pressed( BUTTON.CLEAR, y + 24, "Clear" ) then clear_page() end
+		if pressed( BUTTON.CLEAR, y + 36, "Clear" ) then clear_page() end
 		-- any drawing can be tried: the book tells what it fails on (a ring it doesn't see closed too)
-		if #cur.edit.strokes > 0 and pressed( BUTTON.RETRY, y + 36, "Try seal" ) then finish_sigil() end
+		if #cur.edit.strokes > 0 and pressed( BUTTON.RETRY, y + 48, "Try seal" ) then finish_sigil() end
 	end
 	return left
 end
@@ -1962,7 +2044,7 @@ end
 local function draw_book( mx, my, clicked, carried, menu_click )
 	local size = view.size
 	D.begin( gui )
-	hover_entry, hover_text, hover_seal = nil, nil, nil
+	hover_entry, hover_text, hover_seal, K.doubt_at = nil, nil, nil, nil
 
 	-- the names over the book: the books the witch carries, the grimoire; recalibration on the right
 	local recalibrate = "[Line not under the cursor?]"
@@ -2038,9 +2120,11 @@ local function draw_book( mx, my, clicked, carried, menu_click )
 	local open_hint = book_open_key_hint()
 	local hint = wiki and ( ( full_grimoire() or cur.def.test ) and "LMB on a page - make it active, " .. open_hint .. " - close"
 		or "Study and redraw the seals, " .. open_hint .. " - close" )
+		or not cur.eraser_selected and not cur.marker_selected and book_compass_held()
+			and "Compass: drag out from the middle to set it, then draw along its circle"
 		or ( ( cur.eraser_selected and "LMB - erase, click an ink to draw"
 			or cur.marker_selected and "LMB - circle a sign to name it, click an ink to draw"
-			or "LMB - draw, RMB - erase" ) .. ", " .. open_hint .. " - close" )
+			or "LMB - draw, RMB - erase, " .. book_compass_key_name() .. " - compass" ) .. ", " .. open_hint .. " - close" )
 	local y = foot.y + 12
 	if foot.row then
 		D.centered( foot.x, foot.w, foot.y, hint, nil, 70 )
@@ -2105,6 +2189,7 @@ function notebook_on_player_spawned( player )
 	end
 	-- while the mod is made: the other two books lie beside the witch
 	books_spawn_for_testing( player )
+	BookReading.prepare() -- what reading seals takes, made in the background before the first one
 end
 
 -- Esc opens the pause menu (mods can't prevent that), it also closes the book
@@ -2137,6 +2222,13 @@ local function mark_seen()
 end
 
 function notebook_update()
+	witch_notebook_frame()
+	-- what the book reads goes on, open or shut (book_reading.lua)
+	BookReading.step( is_open )
+end
+
+-- the book this frame (notebook_update)
+function witch_notebook_frame()
 	gui = gui or GuiCreate()
 	GuiStartFrame( gui )
 
@@ -2155,7 +2247,7 @@ function notebook_update()
 	end
 	local requested = GlobalsGetValue( BOOK_OPEN_REQUEST_VAR, "" )
 	if requested ~= "" then GlobalsSetValue( BOOK_OPEN_REQUEST_VAR, "" ) end
-	if InputIsKeyJustDown( open_key ) and player then
+	if InputIsKeyJustDown( open_key ) and player and not book_undo_pressed() then
 		if is_open then
 			close_notebook( player )
 		else
@@ -2210,6 +2302,8 @@ function notebook_update()
 		clicked, wait_release, menu_click = false, true, true
 	elseif BookMarks.menu and InputIsMouseButtonJustDown( MOUSE_RIGHT ) then
 		BookMarks.menu, wait_release = nil, true -- RMB closes it, erasing nothing
+	elseif clicked and BookMarks.doubt_click( mx, my ) then
+		clicked, wait_release = false, true -- [Mark] by the lines a seal failed on: the menu of their readings
 	end
 
 	if notebook_box and clicked then
@@ -2224,6 +2318,8 @@ function notebook_update()
 	local turn_back, turn_on = book_turn_keys()
 	if any_key( { turn_back, KEY_LEFT }, open_key ) or InputIsMouseButtonJustDown( WHEEL_UP ) then turn_pages( -1 ) end
 	if any_key( { turn_on, KEY_RIGHT }, open_key ) or InputIsMouseButtonJustDown( WHEEL_DOWN ) then turn_pages( 1 ) end
+	-- Ctrl+Z (its key configurable) takes back the last change on the pages on view
+	if book_undo_pressed() then witch_notebook_undo() end
 	if tear then
 		tear.frames = tear.frames - 1
 		if tear.frames <= 0 then tear = nil end
@@ -2267,8 +2363,9 @@ function notebook_update()
 	-- a line drawn or erased on from a drawn seal's page opens it
 	witch_notebook_line_on_seal( mx, my )
 
-	-- Any unfinished page can take more ink. Select it when drawing or erasing on that face.
-	if not wiki and not turning() and not is_drawing and not BookMarks.lasso and not BookMarks.menu then
+	-- Any unfinished page can take more ink. Select it when drawing or erasing on that face (the compass at work keeps its
+	-- page, the mouse may go anywhere round it).
+	if not wiki and not turning() and not is_drawing and not BookMarks.lasso and not BookMarks.menu and not BookCompass.gesture then
 		if InputIsMouseButtonDown( MOUSE_LEFT ) or InputIsMouseButtonDown( MOUSE_RIGHT ) then
 			if editable_page( back ) and drawable( mx - view.back.x, my - view.back.y ) then select_edit_page( back )
 			elseif editable_page( front ) and drawable( mx - view.front.x, my - view.front.y ) then select_edit_page( front ) end
@@ -2303,24 +2400,7 @@ function notebook_update()
 		else
 			cur.erase_last_x, cur.erase_last_y = nil, nil
 			witch_notebook_finish_erase()
-			local down = not cur.eraser_selected and not cur.marker_selected and InputIsMouseButtonDown( MOUSE_LEFT )
-			if down and inside and ink >= 1 and not wait_release then
-				if not is_drawing then
-					result = nil
-					cur.edit.strokes[#cur.edit.strokes + 1] = { ink = selected_ink }
-					is_drawing = true
-				end
-				ink_debt = ink_debt + add_point( cur.edit.strokes[#cur.edit.strokes], x, y ) * INK_PER_UNIT
-				if ink_debt >= 1 then
-					local spent = ink_spend( player, math.floor( ink_debt ), cur.edit.strokes[#cur.edit.strokes].ink )
-					ink_debt = ink_debt - spent
-					amounts[selected_ink] = ( amounts[selected_ink] or 0 ) - spent
-					if spent < 1 then amounts[selected_ink] = 0 end -- the flasks ran dry
-				end
-			elseif is_drawing then
-				if inside and #cur.edit.strokes > 0 then add_point( cur.edit.strokes[#cur.edit.strokes], x, y, true ) end
-				end_stroke() -- released the button, left the page or ran out of ink
-			end
+			witch_notebook_pen( x, y, inside, ink, player )
 		end
 	end
 

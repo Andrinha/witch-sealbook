@@ -9,6 +9,11 @@ local NUM_POINTS = 48 -- enough for the details of complex sigils (wind's curls)
 local TILTS = { -math.rad( 15 ), 0, math.rad( 15 ) } -- tolerance for slightly tilted drawings
 local SCORE_SCALE = 4 -- convert mean $P+ distance to the game's 0..1 resemblance scale
 
+-- A seal's reading is spread over frames (book_reading.lua): while one goes on, this is called after every template
+-- matched and lets the frame go on once its share of time is spent; 'weight': work done since, in matches. Nil - the
+-- matching runs through.
+recognizer_pause = nil
+
 local function distance( a, b )
 	return math.sqrt( ( b.x - a.x ) ^ 2 + ( b.y - a.y ) ^ 2 )
 end
@@ -223,6 +228,7 @@ function recognizer_scores( set, strokes, any_count )
 		local limits = not any_count and tpl.strokes
 		if not limits or ( #strokes >= ( limits.min or 0 ) and #strokes <= ( limits.max or math.huge ) ) then
 			out[#out + 1] = { key = tpl.key, tilt = tpl.tilt, score = score( cloud_match( pts, tpl.cloud ) ), template = tpl }
+			if recognizer_pause then recognizer_pause() end
 		end
 	end
 	return out
@@ -249,6 +255,7 @@ function recognizer_best( set, strokes, floor, alternatives )
 					best = { key = tpl.key, tilt = tpl.tilt, score = resemblance, template = tpl }
 					best_value = resemblance - penalty
 				end
+				if recognizer_pause then recognizer_pause() end
 			end
 		end
 	end

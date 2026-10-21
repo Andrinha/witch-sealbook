@@ -10,7 +10,8 @@ if holder == item then return end
 -- disabled while the book is open, so drawing doesn't cast
 local controls = EntityGetFirstComponent( holder, "ControlsComponent" )
 if not controls then return end
-local frame = GameGetFrameNum()
-if ComponentGetValue2( controls, "mButtonFrameFire" ) == frame then
-	spellbook_use( item, holder, controls, frame )
+-- the click is told by the game's frame count; what the book keeps of when (its next cast, the quill's while, the
+-- Knights' coming) by the run's clock, which goes on across Save & Quit (run_clock.lua)
+if ComponentGetValue2( controls, "mButtonFrameFire" ) == GameGetFrameNum() then
+	spellbook_use( item, holder, controls, run_frame() )
 end

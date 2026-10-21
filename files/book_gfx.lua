@@ -1126,4 +1126,5 @@ function book_gfx_create()
 	create_soft()
 	create_glyphs()
 	create_digits()
+	BookDraw.create_stamps() -- the pen's dots in a row, drawn as one image (book_draw.lua)
 end

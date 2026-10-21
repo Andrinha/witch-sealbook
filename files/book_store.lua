@@ -1,7 +1,8 @@
 -- A book's pages as the run keeps them: in the run's globals (books.lua book_var), saved with the world. The state of
 -- a book, which notebook.lua works on:
 --   key, def (books.lua BOOKS), look (book_gfx.lua BOOK_LOOKS)
---   seals: the finished pages and the unfinished drafts (draft = "1"), a page each - what SEAL_FIELDS names
+--   seals: the finished pages and the unfinished drafts (draft = "1", reading = "1" while the book reads it:
+--          book_reading.lua), a page each - what SEAL_FIELDS names
 --   blank, blank_next: the pair of empty pages after them; edit, edit_face: the page being drawn on
 --   active, active_wiki: the seal the book casts; spread, own_spread, wiki_spread: where it lies open
 -- Strokes are kept as text (strokes.lua), their inks and marks beside them; a sheet's page keeps only its seal's key, its
@@ -10,7 +11,7 @@
 BookStore = {}
 local S = BookStore
 
-local SEAL_FIELDS = { "spell", "name", "quality", "color", "strokes", "inks", "marks", "sheet", "tier", "fresh", "draft" }
+local SEAL_FIELDS = { "spell", "name", "quality", "color", "strokes", "inks", "marks", "sheet", "tier", "fresh", "draft", "reading" }
 local shelf = {}        -- the witch's books: key -> state
 local wiki_strokes = {} -- lighter copies of the grimoire's pages, made when first shown
 

@@ -190,6 +190,11 @@ local function twin_choice( mine, a, b )
 end
 
 local grimoire_clouds
+-- A reading spread over frames (book_reading.lua) may pause while the pages' clouds are made, and be given up: the
+-- pages made so far wait here for the next reading to go on from them. Making one takes about as long as this many
+-- templates matched (recognizer_pause), comparing a drawing with one in one pose this many.
+local clouds_made
+local PAGE_WEIGHT, COMPARE_WEIGHT = 100, 10
 -- a copy is turned a little and drawn a little bigger or smaller than the wiki's page: try those, as drawn first
 local CANON_TRIES = { { 0, 1 }, { 0.12, 1 }, { -0.12, 1 }, { 0, 0.94 }, { 0, 1.06 }, { 0.12, 0.94 }, { 0.12, 1.06 },
 	{ -0.12, 0.94 }, { -0.12, 1.06 } }
@@ -202,21 +207,34 @@ local function point_count( strokes )
 	return n
 end
 
+-- The wiki's pages as clouds, made once (the first drawing read)
+function seal_canon_prepare()
+	if grimoire_clouds or not GRIMOIRE then return end
+	local made = clouds_made or { done = 0 }
+	clouds_made = made
+	-- (what is done is read again after every pause: another reading may have gone on with it meanwhile)
+	while not grimoire_clouds and made.done < #GRIMOIRE do
+		local entry = GRIMOIRE[made.done + 1]
+		local strokes = grimoire_strokes( entry )
+		local ring, parts = find_ring( strokes )
+		if ring then
+			-- pages that differ only in the sigil in their middle are one seal here: seal_middle tells them apart
+			local name = entry.middle and "middle:" .. tostring( entry.manifest ) or entry.name
+			made[#made + 1] = { key = entry.key, name = name, cloud = seal_cloud( strokes, ring, parts ) }
+		end
+		made.done = made.done + 1
+		if recognizer_pause then recognizer_pause( PAGE_WEIGHT ) end
+	end
+	if not grimoire_clouds then
+		made.done = nil
+		grimoire_clouds, clouds_made = made, nil
+	end
+end
+
 -- The wiki's seal this drawing is, if any: key, distance (share of the radius)
 function seal_canonical( seal )
 	if not GRIMOIRE or not seal or not seal.strokes then return nil end
-	if not grimoire_clouds then
-		grimoire_clouds = {}
-		for _, entry in ipairs( GRIMOIRE ) do
-			local strokes = grimoire_strokes( entry )
-			local ring, parts = find_ring( strokes )
-			if ring then
-				-- pages that differ only in the sigil in their middle are one seal here: seal_middle tells them apart
-				local name = entry.middle and "middle:" .. tostring( entry.manifest ) or entry.name
-				grimoire_clouds[#grimoire_clouds + 1] = { key = entry.key, name = name, cloud = seal_cloud( strokes, ring, parts ) }
-			end
-		end
-	end
+	seal_canon_prepare()
 	local points = point_count( seal.strokes )
 	local known = canon_last[seal.strokes]
 	if known and known.points == points then return known[1], known[2], known[3] end
@@ -236,6 +254,7 @@ function seal_canonical( seal )
 				local angle, scale = try[1], try[2]
 				local d1 = chamfer( mine, other, angle, bound * 2, scale )
 				local d = d1 < bound * 2 and ( d1 + chamfer( other, mine, -angle, bound * 2, 1 / scale ) ) / 2 or math.huge
+				if recognizer_pause then recognizer_pause( COMPARE_WEIGHT ) end
 				if d < ( d_entry or bound ) then d_entry, turn = d, try end
 				-- far off as drawn, farther than the closest one is as drawn: a little turn or size won't bring it near
 				-- (as drawn against as drawn: a copy turned a little is far from every page as drawn)

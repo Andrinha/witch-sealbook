@@ -1,6 +1,7 @@
 -- Drawing the books (notebook.lua): GUI calls with a depth and a color, text that fits, soft shadows, and a page's
 -- surface - where on the screen a point of a page is. A page lying open is flat (here); a turning page bends
--- (page_turn.lua), and whatever is on it bends with it: both surfaces draw the pen's dots, images and text.
+-- (page_turn.lua), and whatever is on it bends with it: both surfaces draw the pen's dots, images and text; a flat one
+-- draws dots in a row as one image, a stamp (D.strokes).
 -- Depth (z): the smaller, the nearer - the turning sheets lie over the pages, the pages over the cover.
 
 BookDraw = {}
@@ -161,6 +162,106 @@ end
 
 local DOT_STEP = 0.7 -- the pen's dots this far apart along a line on the page: a smooth, unbroken line
 
+-- The pen's dots in a row are drawn as few images as can be: as stamps - the dots of a short straight piece of line,
+-- made at init (D.create_stamps) in a few lengths and many directions - where the dots lie as a stamp has them, else
+-- one by one: a frame of a page of many lines would be thousands of images. Only on a flat page (lying still, or under a
+-- sheet turning over it), with the book's pen, in an ink that hides the paper (a fainter ink's dots darken where they
+-- overlap, a stamp's wouldn't).
+local STAMP_DOTS = { 16, 8, 6, 4, 3, 2 } -- stamps of this many dots in a row, the longest tried first ...
+local STAMP_ANGLES = 32        -- ... turned to this many directions over half a turn
+local STAMP_OFF = 0.15         -- a dot no farther than this from where the stamp has it (gui units)
+local stamps                   -- [dots][direction] = { file, w, h (gui units) }, once made
+local STAMP_COS, STAMP_SIN = {}, {}
+for k = 0, STAMP_ANGLES - 1 do STAMP_COS[k], STAMP_SIN[k] = math.cos( k * math.pi / STAMP_ANGLES ), math.sin( k * math.pi / STAMP_ANGLES ) end
+
+-- At init: each stamp as its dots drawn one over another would be - each lets through what is under it but for its
+-- share of the texel, the pen's dot's (sigils.lua: 4x4 samples)
+function D.create_stamps()
+	local res = NOTEBOOK_BRUSH_RES
+	stamps = {}
+	for _, m in ipairs( STAMP_DOTS ) do
+		stamps[m] = {}
+		local half = ( m - 1 ) * DOT_STEP / 2
+		for k = 0, STAMP_ANGLES - 1 do
+			local ca, sa = STAMP_COS[k], STAMP_SIN[k]
+			-- an even number of texels round the line's middle, the dot's radius beyond its ends
+			local w, h = 2 * math.ceil( ( half * math.abs( ca ) + 1 ) * res ), 2 * math.ceil( ( half * math.abs( sa ) + 1 ) * res )
+			local file = "mods/witch_notebook/files/gfx/stamp_" .. m .. "_" .. k .. ".png"
+			local id = ModImageMakeEditable( file, w, h )
+			for py = 0, h - 1 do
+				for px = 0, w - 1 do
+					local through = 1
+					for j = 0, m - 1 do
+						local t = ( j - ( m - 1 ) / 2 ) * DOT_STEP * res
+						local cx, cy = w / 2 + t * ca, h / 2 + t * sa
+						if ( px + 0.5 - cx ) ^ 2 + ( py + 0.5 - cy ) ^ 2 <= ( res + 1 ) ^ 2 then
+							local inside = 0
+							for sy = 0, 3 do
+								for sx = 0, 3 do
+									if ( px + ( sx + 0.5 ) / 4 - cx ) ^ 2 + ( py + ( sy + 0.5 ) / 4 - cy ) ^ 2 <= res * res then inside = inside + 1 end
+								end
+							end
+							through = through * ( 1 - math.floor( inside * 255 / 16 + 0.5 ) / 255 )
+						end
+					end
+					ModImageSetPixel( id, px, py, color_abgr_merge( 255, 255, 255, math.floor( ( 1 - through ) * 255 + 0.5 ) ) )
+				end
+			end
+			stamps[m][k] = { file = file, w = w / res, h = h / res }
+		end
+	end
+end
+
+-- 'n' of the pen's dots in a row ('row': x1, y1, x2, y2, ... on the page) in 'color', opaque
+function Flat:stamps( row, n, color, z )
+	local i = 1
+	while i <= n do
+		local drawn = false
+		for _, m in ipairs( STAMP_DOTS ) do
+			local j = i + m - 1
+			if j <= n then
+				local x0, y0, x1, y1 = row[2 * i - 1], row[2 * i], row[2 * j - 1], row[2 * j]
+				local k = math.floor( math.atan2( y1 - y0, x1 - x0 ) % math.pi / ( math.pi / STAMP_ANGLES ) + 0.5 ) % STAMP_ANGLES
+				local ca, sa = STAMP_COS[k], STAMP_SIN[k]
+				if ( x1 - x0 ) * ca + ( y1 - y0 ) * sa < 0 then ca, sa = -ca, -sa end -- the row runs the other way
+				local mx, my = ( x0 + x1 ) / 2, ( y0 + y1 ) / 2
+				local fits = true
+				for q = 0, m - 1 do
+					local t = ( q - ( m - 1 ) / 2 ) * DOT_STEP
+					if ( row[2 * ( i + q ) - 1] - mx - t * ca ) ^ 2 + ( row[2 * ( i + q )] - my - t * sa ) ^ 2 > STAMP_OFF ^ 2 then
+						fits = false
+						break
+					end
+				end
+				if fits then
+					local stamp = stamps[m][k]
+					local x, y = self.x + mx - stamp.w / 2, self.y + my - stamp.h / 2
+					-- under a sheet in the air it isn't drawn (one partly under it is: the sheet's paper lies over it)
+					if not ( D.covered and self:hidden( x, y, x + stamp.w, y + stamp.h ) ) then
+						GuiZSetForNextWidget( gui, z or 25 )
+						GuiColorSetForNextWidget( gui, color[1], color[2], color[3], 1 )
+						GuiImage( gui, D.next_id(), x, y, stamp.file, 1, 1 / NOTEBOOK_BRUSH_RES )
+					end
+					i, drawn = j + 1, true
+					break
+				end
+			end
+		end
+		if not drawn then
+			self:dot( row[2 * i - 1], row[2 * i], color, 1, z )
+			i = i + 1
+		end
+	end
+end
+
+local ROW = {} -- the dots of the stretch of line being drawn: x1, y1, x2, y2, ...
+
+-- the 'n' dots in ROW: as stamps ('stamped'), or one by one
+local function draw_row( s, n, stamped, color, alpha, z )
+	if stamped then return s:stamps( ROW, n, color, z ) end
+	for i = 1, n do s:dot( ROW[2 * i - 1], ROW[2 * i], color, alpha, z ) end
+end
+
 -- A drawing on the page 's', exactly as it was drawn: each stroke in its ink's color ('color' replaces the conjuring
 -- ink's, 'ink_key' is the ink of every stroke: a sheet's). Its points are the page's, or with 'frame' { c, k, ky, to }
 -- points around c scaled by k (up and down by ky, if given) around 'to' (the grimoire's pages, drawn on the Spellbook's
@@ -171,13 +272,17 @@ function D.strokes( s, list, look, element_color, z, ink_key, frame )
 	local step = s.step or DOT_STEP
 	local c, k, ky, to = 0, 1, 1, 0
 	if frame then c, k, ky, to = frame.c, frame.k, frame.ky or frame.k, frame.to end
+	local stamping = stamps ~= nil and s.stamps ~= nil and step == DOT_STEP and ( s.pen or 1 ) == 1
 	for _, stroke in ipairs( list ) do
 		local color, alpha = look( stroke, element_color, ink_key )
+		local stamped = stamping and ( alpha or 1 ) >= 1
+		local n = 0
 		local lx, ly
 		local left = 0 -- how far along the line the next dot is
 		for _, p in ipairs( stroke ) do
 			if p.erased then
-				lx, ly, left = nil, nil, 0
+				draw_row( s, n, stamped, color, alpha, z )
+				n, lx, ly, left = 0, nil, nil, 0
 			else
 				local x, y = to + ( p.x - c ) * k, to + ( p.y - c ) * ky
 				if lx then
@@ -185,17 +290,23 @@ function D.strokes( s, list, look, element_color, z, ink_key, frame )
 					local at = left
 					while at <= d do
 						local t = at / d
-						s:dot( lx + ( x - lx ) * t, ly + ( y - ly ) * t, color, alpha, z )
+						n = n + 1
+						ROW[2 * n - 1], ROW[2 * n] = lx + ( x - lx ) * t, ly + ( y - ly ) * t
 						at = at + step
 					end
 					left = at - d
 				else
-					s:dot( x, y, color, alpha, z )
+					n = n + 1
+					ROW[2 * n - 1], ROW[2 * n] = x, y
 					left = step
 				end
 				lx, ly = x, y
 			end
 		end
-		if lx and left < step - 0.05 then s:dot( lx, ly, color, alpha, z ) end -- the stroke's very end
+		if lx and left < step - 0.05 then -- the stroke's very end
+			n = n + 1
+			ROW[2 * n - 1], ROW[2 * n] = lx, ly
+		end
+		draw_row( s, n, stamped, color, alpha, z )
 	end
 end

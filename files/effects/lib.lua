@@ -4,6 +4,7 @@
 -- the effect itself (EntityKill) when its time is up. Shared helpers for the modes.
 
 dofile_once( "data/scripts/lib/utilities.lua" )
+dofile_once( "mods/witch_notebook/files/run_clock.lua" ) -- the run's frames, going on across Save & Quit: effects keep times by it
 dofile_once( "mods/witch_notebook/files/dictionary.lua" )
 dofile_once( "mods/witch_notebook/files/fx.lua" )
 dofile_once( "mods/witch_notebook/files/resonances.lua" ) -- how much the resonances' lasting magic does
@@ -119,9 +120,17 @@ function effect_point_light( e, key, x, y, radius )
 	return comp
 end
 
--- frames since the effect was made
+-- frames since the effect was made (by the run's clock: run_clock.lua)
 function effect_age( p )
-	return GameGetFrameNum() - ( p.born or 0 )
+	return run_frame() - ( p.born or 0 )
+end
+
+-- The quill of water draws with the button while it lasts (manifest.lua M.wand): the books don't cast meanwhile. A wait
+-- longer than any quill lasts was set before the run's clock (a game saved by an older version): it is over.
+local QUILL_LONGEST = 60 * 60
+function book_busy( now )
+	local busy = tonumber( GlobalsGetValue( "witch_notebook.busy_until", "0" ) ) or 0
+	return now < busy and busy - now <= QUILL_LONGEST
 end
 
 -- Some PhysicsBody2 props discard their entity after initialization. A tracer
@@ -421,7 +430,7 @@ function effect_channel( p )
 		or ComponentGetValue2( controls, "enabled" ) == false
 		or not ComponentGetValue2( controls, "mButtonDownFire" )
 		or GlobalsGetValue( book_var( book_key_of( book ), "active_spell" ), "" ) ~= p.channel_spell
-		or GameGetFrameNum() < ( tonumber( GlobalsGetValue( "witch_notebook.busy_until", "0" ) ) or 0 ) then
+		or book_busy( run_frame() ) then
 		return
 	end
 	return owner, controls
