@@ -528,7 +528,6 @@ local function edit_seal( i )
 	seal.failed = seal_ring_closed( seal.strokes )
 	if cur.active == i then set_active( cur, 0 ) end
 	save_seal( cur, i )
-	cur.eraser_selected = false
 end
 
 -- a page's lines, how many and their marks: what tells if they changed
@@ -536,55 +535,50 @@ local function page_look( page )
 	return #page.strokes .. "|" .. page.point_count .. "|" .. strokes_encode_marks( page.strokes )
 end
 
--- A drawn seal opened by "Mark" (mark_seal) and left as it was - nothing marked, drawn or erased - awakens again as it
--- was when the witch leaves it (another tool, another seal to mark, the book put away): the book casts it as before
-local function put_back_marked()
-	local opened = cur.mark_opened
-	cur.mark_opened = nil
-	if not opened or cur.seals[opened.i] ~= opened.seal or opened.seal.draft ~= "1" or page_look( opened.seal ) ~= opened.look then
-		return
+-- A drawn seal opened by a tool (open_seal) and left as it was - nothing marked, drawn or erased - awakens again as it
+-- was when the witch leaves it (another seal opened, the book put away): the book casts it as before
+local function put_back_opened()
+	local opened = cur.opened
+	cur.opened = nil
+	if not opened or opened.seal.draft ~= "1" or page_look( opened.seal ) ~= opened.look then return end
+	local i -- pages torn out before it moved it up
+	for j, seal in ipairs( cur.seals ) do
+		if seal == opened.seal then i = j end
 	end
+	if not i then return end
 	opened.seal.draft = ""
-	save_seal( cur, opened.i )
-	if opened.active then set_active( cur, opened.i ) end
+	save_seal( cur, i )
+	if opened.active and cur.active == 0 then set_active( cur, i ) end -- unless another seal awoke meanwhile
 	if cur.edit == opened.seal then select_edit_page( blank_page() ) end
 end
 
--- "Mark" on a drawn seal: it goes back to a draft to mark its lines (book_marks.lua), and awakens again when they are
--- marked (its ring is closed); a pasted sheet is the grimoire's drawing, nothing to mark
-local function mark_seal( i )
+-- A drawn seal pressed on with "Mark" or the eraser, or a line drawn on it with the pen: it goes back to a draft as with
+-- [edit], to mark its lines ('marking': book_marks.lua) or draw and erase on it, and awakens again when its ring is
+-- closed; a pasted sheet is the grimoire's drawing, nothing to change
+local function open_seal( i, marking )
 	local seal = cur.seals[i]
 	if seal.sheet ~= "" then
-		note = { text = "A pasted sheet is read as its page - nothing to mark.", frames = NOTE_FRAMES }
+		note = { text = "A pasted sheet is read as its page - nothing to change on it.", frames = NOTE_FRAMES }
 		return
 	end
-	put_back_marked()
+	put_back_opened()
 	local active = cur.active == i
 	edit_seal( i )
-	cur.mark_opened = { seal = seal, i = i, active = active, look = page_look( seal ) }
-	note = { text = "Marking " .. seal.name .. ": circle the lines the book misread.", frames = NOTE_FRAMES }
+	cur.opened = { seal = seal, active = active, look = page_look( seal ) }
+	note = { text = marking and ( "Marking " .. seal.name .. ": circle the lines the book misread." )
+		or ( "Editing " .. seal.name .. ": it awakens again when its ring is closed." ), frames = NOTE_FRAMES }
 end
 
--- "Mark" chosen with no lines being drawn on view: the drawn seal on view to mark - the active one, or the only one
-local function seal_to_mark()
-	local back, front = spread_faces( cur.spread )
-	if ( back == cur.edit_face or front == cur.edit_face ) and #cur.edit.strokes > 0 then return nil end
-	local found = {}
-	for _, face in ipairs( { back, front } ) do
-		local i = face - cur.def.intro
-		local seal = face > cur.def.intro and cur.seals[i]
-		if seal and seal.draft ~= "1" and seal.sheet == "" then
-			if i == cur.active then return i end
-			found[#found + 1] = i
-		end
-	end
-	return #found == 1 and found[1] or nil
-end
-
--- A click on a drawn seal's page makes it the active one; with "Mark" chosen it is marked (the lasso begins with the
--- same click)
+-- A click on a drawn seal's page makes it the active one, and a line drawn on from there opens it (cur.line_on:
+-- witch_notebook_line_on_seal); with "Mark" or the eraser chosen it is opened, the lasso or erasing begun with the same
+-- click
 local function choose_seal( i )
-	if cur.marker_selected then mark_seal( i ) else set_active( cur, i ) end
+	if cur.marker_selected then open_seal( i, true )
+	elseif cur.eraser_selected then open_seal( i )
+	else
+		set_active( cur, i )
+		cur.line_on = { i = i, x = press_at[1], y = press_at[2] }
+	end
 end
 
 ---- turning the pages ----
@@ -719,7 +713,7 @@ local function put_away()
 	is_drawing = false -- a line being drawn just ends; it doesn't awaken the seal
 	cur.erase_last_x, cur.erase_last_y = nil, nil
 	K.lasso, K.menu = nil, nil
-	put_back_marked()
+	put_back_opened()
 	save_page()
 	for i, seal in ipairs( cur.seals ) do if seal.draft == "1" then save_seal( cur, i ) end end
 	GlobalsSetValue( book_var( cur.key, "spread" ), tostring( cur.spread ) )
@@ -880,11 +874,12 @@ end
 function witch_notebook_finish_erase()
 	local page = cur and cur.edit
 	if not page or not page.erase_dirty then return end
-	local kept = {}
+	local kept, touched = {}, {}
 	for _, stroke in ipairs( page.strokes ) do
 		local piece = { ink = stroke.ink, mark = stroke.mark }
 		for _, p in ipairs( stroke ) do
 			if p.erased then
+				if stroke.mark then touched[stroke.mark] = true end
 				if #piece > 0 then kept[#kept + 1] = piece; piece = { ink = stroke.ink, mark = stroke.mark } end
 			else
 				piece[#piece + 1] = p
@@ -894,6 +889,18 @@ function witch_notebook_finish_erase()
 	end
 	page.strokes, page.erase_dirty = kept, nil
 	page.erase_index = nil
+	-- marked lines erased till they no longer look like what they were marked as: the book reads them itself
+	for mark in pairs( touched ) do
+		local lines = {}
+		for _, stroke in ipairs( kept ) do
+			if stroke.mark == mark then lines[#lines + 1] = stroke end
+		end
+		if #lines > 0 and not K.holds( kept, lines, mark ) then
+			for _, stroke in ipairs( lines ) do stroke.mark = nil end
+			note = { text = "Unmarked: what is left no longer looks like " .. K.name( mark ) .. " - the book reads it itself.",
+				frames = NOTE_FRAMES }
+		end
+	end
 	if not seal_ring_closed( kept ) then page.failed = false end
 	if page.draft == "1" then save_seal( cur, cur.edit_face - cur.def.intro ) end
 end
@@ -1027,6 +1034,44 @@ local function drawable( x, y )
 	local size = view.size
 	if view.def.round then return ( x - size / 2 ) ^ 2 + ( y - size / 2 ) ^ 2 <= ( size / 2 - 5 ) ^ 2 end
 	return x >= 6 and y >= 6 and x <= size - 6 and y <= size - 6
+end
+
+-- A drawn seal's page pressed on with the pen (choose_seal) or RMB, and the mouse moved on with the button held: a line
+-- drawn or erased on it - the seal opens as with [edit], the line begun where it was pressed (cur.line_on: { i, x, y,
+-- erase }; notebook_update reaches this by its global name)
+function witch_notebook_line_on_seal( mx, my )
+	local back, front = spread_faces( cur.spread )
+	if InputIsMouseButtonJustDown( MOUSE_RIGHT ) and not wait_release and not wiki and not turning() and not K.menu then
+		for _, face in ipairs( { back, front } ) do
+			local seal = face > cur.def.intro and cur.seals[face - cur.def.intro]
+			if seal and seal.draft ~= "1" and over_page( face == back and view.back or view.front, mx, my ) then
+				cur.line_on = { i = face - cur.def.intro, x = mx, y = my, erase = true }
+			end
+		end
+	end
+	local on = cur.line_on
+	if not on then return end
+	local held = on.erase and InputIsMouseButtonDown( MOUSE_RIGHT )
+		or not on.erase and InputIsMouseButtonDown( MOUSE_LEFT ) and not cur.eraser_selected and not cur.marker_selected
+	if not held or wiki or turning() then
+		cur.line_on = nil
+		return
+	end
+	if ( mx - on.x ) ^ 2 + ( my - on.y ) ^ 2 < 3 ^ 2 then return end -- a click: the pen's only chose the seal
+	cur.line_on = nil
+	local seal, face = cur.seals[on.i], cur.def.intro + on.i
+	local pos = face == back and view.back or face == front and view.front
+	if not seal or seal.draft == "1" or seal.sheet ~= "" or not pos then return end
+	open_seal( on.i )
+	select_edit_page( face )
+	local x, y = on.x - pos.x, on.y - pos.y
+	if on.erase then
+		cur.erase_last_x, cur.erase_last_y = x, y -- the eraser sweeps on from there
+	elseif drawable( x, y ) and ( amounts[selected_ink] or 0 ) >= 1 then
+		cur.edit.strokes[#cur.edit.strokes + 1] = { ink = selected_ink }
+		add_point( cur.edit.strokes[#cur.edit.strokes], x, y )
+		is_drawing, result = true, nil
+	end
 end
 
 ---- drawing the book: the pages (the pen's kit, the hints and the front pages are in book_pages.lua) ----
@@ -1361,8 +1406,12 @@ local function draw_page( face, pos, mx, my, still )
 	local over = over_page( pos, mx, my )
 	if over and cur.marker_selected and seal.sheet == "" then
 		D.text( label_x, label.y, "LMB - mark its lines", NOTE_COLOR )
+	elseif over and cur.eraser_selected and seal.sheet == "" then
+		D.text( label_x, label.y, "LMB - erase on it", NOTE_COLOR )
 	elseif over and i ~= cur.active then
 		D.text( label_x, label.y, "LMB - choose", NOTE_COLOR )
+	elseif over and seal.sheet == "" then
+		D.text( label_x, label.y, "Draw on it to edit", NOTE_COLOR ) -- chosen: what the pen does on it (no room for both)
 	end
 	if over then
 		local entry = seal.sheet ~= "" and GRIMOIRE_BY_KEY and GRIMOIRE_BY_KEY[seal.sheet]
@@ -1397,6 +1446,7 @@ local function draw_page( face, pos, mx, my, still )
 		if GuiButton( gui, BUTTON.EDIT + ( face + 1 ) % 2, edit_x, tear_y, "[edit]" ) then
 			tear = nil
 			edit_seal( i )
+			cur.eraser_selected = false
 			return
 		end
 	end
@@ -1465,7 +1515,6 @@ local function draw_ink_panel( mx, my, clicked )
 				if clicked then
 					selected_ink = ink.key
 					cur.eraser_selected, cur.marker_selected = false, false
-					put_back_marked()
 					GlobalsSetValue( INK_VAR, selected_ink )
 				end
 			end
@@ -1488,15 +1537,12 @@ local function draw_ink_panel( mx, my, clicked )
 	GuiColorSetForNextWidget( gui, color[1], color[2], color[3], 1 )
 	if pressed( BUTTON.ERASER, y, "Erase" ) then
 		cur.eraser_selected, cur.marker_selected = true, false
-		put_back_marked()
 	end
 	-- marking what lines are (a sign the book misreads)
 	color = cur.marker_selected and GOLD_COLOR or GREY
 	GuiColorSetForNextWidget( gui, color[1], color[2], color[3], 1 )
 	if pressed( BUTTON.MARK, y + 12, "Mark" ) then
 		cur.marker_selected, cur.eraser_selected = true, false
-		local i = seal_to_mark()
-		if i then mark_seal( i ) end
 	end
 	local r = notebook_button_rects[BUTTON.MARK]
 	if mx >= r[1] - 2 and mx <= r[1] + r[3] + 2 and my >= r[2] - 2 and my <= r[2] + r[4] + 2 then
@@ -1912,7 +1958,8 @@ local function draw_book_tabs( x, y, width, carried )
 	return clicked and keys[clicked], below
 end
 
-local function draw_book( mx, my, clicked, carried )
+-- 'menu_click': the click closed the Mark menu (book_marks.lua) - an ink under it is picked still
+local function draw_book( mx, my, clicked, carried, menu_click )
 	local size = view.size
 	D.begin( gui )
 	hover_entry, hover_text, hover_seal = nil, nil, nil
@@ -1952,7 +1999,7 @@ local function draw_book( mx, my, clicked, carried )
 	if corner then draw_corner( corner ) end
 	draw_ribbon_end( mx, my, clicked )
 	local left, right = view.panel.x - 4, view.right + 4
-	if not wiki then left = draw_ink_panel( mx, my, clicked ) end
+	if not wiki then left = draw_ink_panel( mx, my, clicked or menu_click ) end
 	-- the Test Book: what the seals on view do, beside their pages
 	if cur.def.test then
 		local sw = GuiGetScreenDimensions( gui )
@@ -2156,10 +2203,11 @@ function notebook_update()
 	local clicked = not wait_release and InputIsMouseButtonJustDown( MOUSE_LEFT )
 
 	-- the menu of what circled lines are takes the click; the button held on doesn't draw or circle (book_marks.lua, by
-	-- its global name: this function has no upvalues to spare)
+	-- its global name: this function has no upvalues to spare); an ink clicked is picked still (draw_book)
+	local menu_click = false
 	if BookMarks.menu and clicked then
 		BookMarks.click( mx, my )
-		clicked, wait_release = false, true
+		clicked, wait_release, menu_click = false, true, true
 	elseif BookMarks.menu and InputIsMouseButtonJustDown( MOUSE_RIGHT ) then
 		BookMarks.menu, wait_release = nil, true -- RMB closes it, erasing nothing
 	end
@@ -2215,6 +2263,9 @@ function notebook_update()
 			end
 		end
 	end
+
+	-- a line drawn or erased on from a drawn seal's page opens it
+	witch_notebook_line_on_seal( mx, my )
 
 	-- Any unfinished page can take more ink. Select it when drawing or erasing on that face.
 	if not wiki and not turning() and not is_drawing and not BookMarks.lasso and not BookMarks.menu then
@@ -2273,5 +2324,5 @@ function notebook_update()
 		end
 	end
 
-	draw_book( mx, my, clicked, carried )
+	draw_book( mx, my, clicked, carried, menu_click )
 end

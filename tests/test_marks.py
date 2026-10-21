@@ -17,6 +17,7 @@ import run_tests as R  # noqa: E402
 from harness import MOD, load_mod, load_reader  # noqa: E402
 
 MARK_BUTTON = 900097  # notebook.lua BUTTON.MARK
+ERASE_BUTTON = 900009  # BUTTON.ERASER
 
 
 def fire_seal(lua, seed=3):
@@ -199,6 +200,11 @@ def click_row(G, row):
     G.notebook_update(); G.left_down = False; G.notebook_update()
 
 
+def click_ink(G, view):
+    G.mouse[1], G.mouse[2] = view.panel.x + 5, view.panel.y + 10
+    G.left_down = G.left_just_down = True; G.notebook_update(); G.left_just_down = G.left_down = False; G.notebook_update()
+
+
 class MarkInTheBook(unittest.TestCase):
     def test_circle_pick_and_close_the_ring(self):
         lua = load_mod()
@@ -245,8 +251,8 @@ class MarkInTheBook(unittest.TestCase):
         self.assertEqual(len(sigil), sum(1 for s in page.strokes.values() if s.mark and s.mark.key == "flicker"))
 
     def test_mark_opens_a_drawn_seal(self):
-        # a seal that awoke misread: "Mark" opens it again to mark its lines (the only drawn seal on view), the pick
-        # awakens it again; a click with "Mark" on a drawn seal opens it too, and its lasso begins with that click
+        # a seal that awoke misread: "Mark" opens nothing itself, a click with it on the seal opens it again to mark its
+        # lines - the lasso begins with that click; the pick awakens it again
         lua = load_mod()
         lua.execute(open(os.path.join(MOD, "files", "grimoire.lua"), encoding="utf-8").read())
         lua.execute(R.CARRY_ALL)
@@ -259,8 +265,9 @@ class MarkInTheBook(unittest.TestCase):
         self.assertEqual(1, R.seal_count(G))
         self.assertEqual("1", G.globals["witch_notebook.active"])
         R.press_button(G, MARK_BUTTON)
-        self.assertEqual("1", G.globals["witch_notebook.seal_1_draft"])
+        self.assertEqual("", G.globals["witch_notebook.seal_1_draft"])
         lasso(G, pos, k, cx, cy, 0.33 * r)
+        self.assertEqual("1", G.globals["witch_notebook.seal_1_draft"])
         rows = list(lua.eval("BookMarks.menu").rows.values())
         click_row(G, next(row for row in rows if row.item and row.item.key == "flicker"))
         self.assertEqual("", G.globals["witch_notebook.seal_1_draft"])
@@ -271,8 +278,8 @@ class MarkInTheBook(unittest.TestCase):
         self.assertIsNotNone(lua.eval("BookMarks.menu"))
 
     def test_a_seal_opened_and_left_as_it_was_awakens_again(self):
-        # "Mark" opens the active seal; nothing is marked (Cancel) and an ink is chosen again: the seal is awake and
-        # active as before. One marked and left unawakened stays a draft.
+        # "Mark" opens the active seal; nothing is marked (Cancel), an ink is chosen: it stays open to be drawn on; the
+        # book put away, it is awake and active as before. One marked and left unawakened stays a draft.
         lua = load_mod()
         lua.execute(open(os.path.join(MOD, "files", "grimoire.lua"), encoding="utf-8").read())
         lua.execute(R.CARRY_ALL)
@@ -284,34 +291,139 @@ class MarkInTheBook(unittest.TestCase):
         R.draw_on_blank(G, strokes[1:] + strokes[:1] + [closing])
         spell = G.globals["witch_notebook.seal_1_spell"]
         R.press_button(G, MARK_BUTTON)
+        lasso(G, pos, k, cx, cy, 0.33 * r)
         self.assertEqual("1", G.globals["witch_notebook.seal_1_draft"])
         self.assertEqual("0", G.globals["witch_notebook.active"])
-        lasso(G, pos, k, cx, cy, 0.33 * r)
         click_row(G, list(lua.eval("BookMarks.menu").rows.values())[-1])  # Cancel
-        G.mouse[1], G.mouse[2] = view.panel.x + 5, view.panel.y + 10  # the ink
-        G.left_down = G.left_just_down = True; G.notebook_update(); G.left_just_down = G.left_down = False; G.notebook_update()
+        click_ink(G, view)
+        self.assertEqual("1", G.globals["witch_notebook.seal_1_draft"])
+        R.toggle_book(G)
         self.assertEqual("", G.globals["witch_notebook.seal_1_draft"])
         self.assertEqual("1", G.globals["witch_notebook.active"])
         self.assertEqual(spell, G.globals["witch_notebook.seal_1_spell"])
-        # opened again, the menu closed with RMB, an ink: the seal under the mouse tells its parts (they were dropped)
+        # put back, the seal under the mouse tells its parts (Mark dropped them)
+        R.open_book(G, to_blank=False)
+        G.mouse[1], G.mouse[2] = pos.x + cx * k, pos.y + cy * k
+        G.notebook_update()
+        # opened again: RMB closes the menu
         R.press_button(G, MARK_BUTTON)
         lasso(G, pos, k, cx, cy, 0.33 * r)
         G.right_down = G.right_just_down = True; G.notebook_update(); G.right_just_down = G.right_down = False
         self.assertIsNone(lua.eval("BookMarks.menu"))
         G.notebook_update()
-        G.mouse[1], G.mouse[2] = view.panel.x + 5, view.panel.y + 10
-        G.left_down = G.left_just_down = True; G.notebook_update(); G.left_just_down = G.left_down = False; G.notebook_update()
-        self.assertEqual("", G.globals["witch_notebook.seal_1_draft"])
-        G.mouse[1], G.mouse[2] = pos.x + cx * k, pos.y + cy * k
-        G.notebook_update()
         # marked as a sign in the middle: no element sigil, it stays a draft; the book put away, still one
-        R.press_button(G, MARK_BUTTON)
         lasso(G, pos, k, cx, cy, 0.33 * r)
         rows = list(lua.eval("BookMarks.menu").rows.values())
         click_row(G, next(row for row in rows if row.item and row.item.kind == "sign"))
         self.assertEqual("1", G.globals["witch_notebook.seal_1_draft"])
         R.toggle_book(G)
         self.assertEqual("1", G.globals["witch_notebook.seal_1_draft"])
+        # the menu open, one click on an ink closes it and takes the pen: the button held on the page draws, no lasso
+        R.open_book(G, to_blank=False)
+        R.press_button(G, MARK_BUTTON)
+        lasso(G, pos, k, cx, cy, 0.33 * r)
+        self.assertIsNotNone(lua.eval("BookMarks.menu"))
+        click_ink(G, view)
+        self.assertIsNone(lua.eval("BookMarks.menu"))
+        G.left_down = True
+        for t in range(5):
+            G.mouse[1], G.mouse[2] = pos.x + (cx + t) * k, pos.y + cy * k
+            G.notebook_update()
+        self.assertIsNone(lua.eval("BookMarks.lasso"))
+        G.left_down = False; G.notebook_update()
+
+    def test_erase_then_a_press_opens_a_drawn_seal(self):
+        # an ink or Erase chosen opens nothing; with the eraser a press on the drawn seal opens it as [edit] does, the
+        # press erasing on it at once. Opened and left as it was, the book put away, it is awake and active again.
+        lua = load_mod()
+        lua.execute(open(os.path.join(MOD, "files", "grimoire.lua"), encoding="utf-8").read())
+        lua.execute(R.CARRY_ALL)
+        G = lua.globals()
+        R.open_book(G)
+        strokes, closing, sigil, columns, (cx, cy, r) = fire_seal(lua, seed=6)
+        view, side = G.notebook_view()
+        pos, k = view[side], view.size / 180
+        R.draw_on_blank(G, strokes[1:] + strokes[:1] + [closing])
+        click_ink(G, view)
+        R.press_button(G, ERASE_BUTTON)
+        self.assertEqual("", G.globals["witch_notebook.seal_1_draft"])
+        # a press on an empty spot: open, nothing erased; put back with the book
+        G.mouse[1], G.mouse[2] = pos.x + (cx - 0.6 * r) * k, pos.y + (cy + 0.6 * r) * k
+        G.left_down = G.left_just_down = True; G.notebook_update(); G.left_just_down = G.left_down = False; G.notebook_update()
+        self.assertEqual("1", G.globals["witch_notebook.seal_1_draft"])
+        self.assertEqual("0", G.globals["witch_notebook.active"])
+        R.toggle_book(G)
+        self.assertEqual("", G.globals["witch_notebook.seal_1_draft"])
+        self.assertEqual("1", G.globals["witch_notebook.active"])
+        # pressed on a column's line and along it: erased
+        R.open_book(G, to_blank=False)
+        R.press_button(G, ERASE_BUTTON)  # the book opens with the pen
+        before = G.globals["witch_notebook.seal_1_strokes"]
+        G.left_down = G.left_just_down = True
+        for x, y in strokes[columns[0] - 1]:
+            G.mouse[1], G.mouse[2] = pos.x + x * k, pos.y + y * k
+            G.notebook_update()
+            G.left_just_down = False
+        G.left_down = False; G.notebook_update()
+        self.assertEqual("1", G.globals["witch_notebook.seal_1_draft"])
+        self.assertNotEqual(before, G.globals["witch_notebook.seal_1_strokes"])
+
+    def test_rmb_drawn_across_a_seal_opens_it(self):
+        # RMB clicked on a drawn seal leaves it be; held and drawn along a line of it, the seal opens and the line is
+        # erased from where it was pressed
+        lua = load_mod()
+        lua.execute(open(os.path.join(MOD, "files", "grimoire.lua"), encoding="utf-8").read())
+        lua.execute(R.CARRY_ALL)
+        G = lua.globals()
+        R.open_book(G)
+        strokes, closing, sigil, columns, (cx, cy, r) = fire_seal(lua, seed=6)
+        view, side = G.notebook_view()
+        pos, k = view[side], view.size / 180
+        R.draw_on_blank(G, strokes[1:] + strokes[:1] + [closing])
+        before = G.globals["witch_notebook.seal_1_strokes"]
+        x, y = strokes[columns[0] - 1][0]
+        G.mouse[1], G.mouse[2] = pos.x + x * k, pos.y + y * k
+        G.right_down = G.right_just_down = True; G.notebook_update(); G.right_just_down = G.right_down = False; G.notebook_update()
+        self.assertEqual("", G.globals["witch_notebook.seal_1_draft"])
+        self.assertEqual(before, G.globals["witch_notebook.seal_1_strokes"])
+        G.right_down = G.right_just_down = True
+        for x, y in strokes[columns[0] - 1]:
+            G.mouse[1], G.mouse[2] = pos.x + x * k, pos.y + y * k
+            G.notebook_update()
+            G.right_just_down = False
+        G.right_down = False; G.notebook_update()
+        self.assertEqual("1", G.globals["witch_notebook.seal_1_draft"])
+        self.assertNotEqual(before, G.globals["witch_notebook.seal_1_strokes"])
+
+    def test_a_line_drawn_on_a_seal_opens_it(self):
+        # with the pen a click on a drawn seal chooses it and leaves it be; a line drawn on from it opens it as [edit]
+        # does, the line begun where it was pressed
+        lua = load_mod()
+        lua.execute(open(os.path.join(MOD, "files", "grimoire.lua"), encoding="utf-8").read())
+        lua.execute(R.CARRY_ALL)
+        G = lua.globals()
+        R.open_book(G)
+        strokes, closing, sigil, columns, (cx, cy, r) = fire_seal(lua, seed=6)
+        view, side = G.notebook_view()
+        pos, k = view[side], view.size / 180
+        R.draw_on_blank(G, strokes[1:] + strokes[:1] + [closing])
+        lines = G.globals["witch_notebook.seal_1_strokes"].count("|") + 1
+        x0, y0 = cx - 0.6 * r, cy + 0.6 * r
+        G.mouse[1], G.mouse[2] = pos.x + x0 * k, pos.y + y0 * k
+        G.left_down = G.left_just_down = True; G.notebook_update(); G.left_just_down = G.left_down = False; G.notebook_update()
+        self.assertEqual("", G.globals["witch_notebook.seal_1_draft"])
+        self.assertEqual("1", G.globals["witch_notebook.active"])
+        G.left_down = G.left_just_down = True
+        for t in range(10):
+            G.mouse[1], G.mouse[2] = pos.x + (x0 + 2 * t) * k, pos.y + y0 * k
+            G.notebook_update()
+            G.left_just_down = False
+            if t == 3:
+                self.assertEqual("1", G.globals["witch_notebook.seal_1_draft"])
+        G.left_down = False; G.notebook_update()
+        self.assertEqual(lines + 1, G.globals["witch_notebook.seal_1_strokes"].count("|") + 1)
+        x, y = map(float, G.globals["witch_notebook.seal_1_strokes"].split("|")[-1].split(" ")[0].split(","))
+        self.assertLess(math.dist((x, y), (x0 * k, y0 * k)), 1)
 
     def test_marked_lines_shown_again_and_unmarked(self):
         lua = load_mod()
@@ -347,6 +459,17 @@ class MarkInTheBook(unittest.TestCase):
         marks = G.globals["witch_notebook.seal_1_marks"]
         self.assertTrue(marks.startswith(f"{other.item.kind}:{other.item.key}@"), marks)
         self.assertGreater(len(marks.split("@")[1].split(",")), len(sigil))
+        # erased but for a scrap by the first line's start: no longer what it was marked as, the mark is gone
+        ax, ay = strokes[sigil[0] - 1][0]
+        reach = 2.5 * 6 / k  # notebook.lua ERASER_RADIUS, page units of a 180 page
+        for index in sigil:
+            G.right_down = True
+            for x, y in strokes[index - 1]:
+                if (x - ax) ** 2 + (y - ay) ** 2 > reach ** 2:
+                    G.mouse[1], G.mouse[2] = pos.x + x * k, pos.y + y * k
+                    G.notebook_update()
+            G.right_down = False; G.notebook_update()
+        self.assertEqual("", G.globals["witch_notebook.seal_1_marks"])
 
 
 if __name__ == "__main__":

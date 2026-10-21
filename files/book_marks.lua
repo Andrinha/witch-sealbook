@@ -18,7 +18,10 @@ local REACH = 7       -- ... on marked lines this close to it
 local ROW = 13        -- the menu's rows
 local GLOW = { 0.78, 0.5, 0.08 }        -- the lines circled or under the mouse, drawn over in this (notebook.lua PART_GLOW)
 local PAPER = { 0.95, 0.91, 0.82 }      -- behind words over a drawing (notebook.lua PART_BACK)
-local HIGHLIGHT = { 0.5, 0.72, 0.95 }   -- the highlighter under marked lines
+local SIGN_HIGHLIGHT = { 0.6, 0.6, 0.64 }   -- the highlighter under lines marked as a sign,
+local FRAME_HIGHLIGHT = { 0.52, 0.47, 0.42 } -- as a frame; a sigil's is its element's (highlight_of)
+local HIGHLIGHT_TONE = 175                    -- a sigil's color no lighter than this (luminance, 0-255) ...
+local HIGHLIGHT_VIVID = 1.8                   -- ... and this much more vivid: pale yellows seen on paper
 local EDGE = { 0.45, 0.36, 0.26 }
 local OVER = { 0.95, 0.78, 0.4 }
 
@@ -63,6 +66,15 @@ function K.name( item )
 	local def = DICTIONARY_SIGILS[item.key] or {}
 	local element = def.element and DICTIONARY_ELEMENTS[def.element]
 	return def.name or element and element.name or item.key
+end
+
+-- 'lines' (some of the page's 'strokes') still look like 'mark' as well as the menu wants to offer it: partly erased
+-- they may not
+function K.holds( strokes, lines, mark )
+	for _, item in ipairs( seal_mark_readings( strokes, lines, math.huge ) ) do
+		if item.kind == mark.kind and item.key == mark.key then return true end
+	end
+	return false
 end
 
 -- The lasso let go: the lines it circled (or the marked ones clicked) get the menu of their readings, opening where it
@@ -124,6 +136,23 @@ end
 
 ---- drawn ----
 
+-- the highlighter's color under lines marked 'mark': a sigil's that of its element (sigils.lua sigil_symbol_color, as
+-- the menu shows it), toned down to show on paper
+local highlights = {}
+local function highlight_of( mark )
+	if mark.kind == "sign" then return SIGN_HIGHLIGHT end
+	if mark.kind == "frame" then return FRAME_HIGHLIGHT end
+	if not highlights[mark.key] then
+		local c = sigil_symbol_color( mark.key )
+		local grey = 0.299 * c[1] + 0.587 * c[2] + 0.114 * c[3]
+		local v = {}
+		for i = 1, 3 do v[i] = math.max( 0, math.min( 255, grey + ( c[i] - grey ) * HIGHLIGHT_VIVID ) ) end
+		local k = math.min( 1, HIGHLIGHT_TONE / math.max( 1, 0.299 * v[1] + 0.587 * v[2] + 0.114 * v[3] ) ) / 255
+		highlights[mark.key] = { v[1] * k, v[2] * k, v[3] * k }
+	end
+	return highlights[mark.key]
+end
+
 -- an unfinished page's marked lines lie over a highlighter's line
 function K.draw_marks( s, strokes )
 	local list = {}
@@ -133,7 +162,7 @@ function K.draw_marks( s, strokes )
 	if #list == 0 then return end
 	local pen, step = s.pen, s.step
 	s.pen, s.step = 2.5, 1.5
-	D.strokes( s, list, function() return HIGHLIGHT, 0.6 end, nil, 27 )
+	D.strokes( s, list, function( stroke ) return highlight_of( stroke.mark ), 0.6 end, nil, 27 )
 	s.pen, s.step = pen, step
 end
 
