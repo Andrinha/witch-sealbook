@@ -62,6 +62,22 @@ function book_compass_key_name()
 	return TWIN_KEYS[key] and ( KEY_NAMES[key]:gsub( "^%a+ ", "" ) ) or book_key_name( key )
 end
 
+-- held, the pen draws straight lines (book_line.lua); a Ctrl, Shift or Alt on either side of the keyboard
+function book_line_key()
+	return key_setting( "line_key", 224 ) -- Left Ctrl
+end
+
+function book_line_held()
+	local key = book_line_key()
+	return InputIsKeyDown( key ) or ( TWIN_KEYS[key] ~= nil and InputIsKeyDown( TWIN_KEYS[key] ) )
+end
+
+-- the line key's name in the hints: "Ctrl" for either Ctrl
+function book_line_key_name()
+	local key = book_line_key()
+	return TWIN_KEYS[key] and ( KEY_NAMES[key]:gsub( "^%a+ ", "" ) ) or book_key_name( key )
+end
+
 -- RMB with a book in hand opens it (on unless the setting is switched off)
 function book_open_rmb()
 	return ModSettingGet( "witch_notebook.open_rmb" ) ~= false

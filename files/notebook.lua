@@ -8,8 +8,9 @@
 -- seal stays on its page and becomes the book's active one. A click on a seal's page makes it active: the book in hand
 -- casts it, with no limit (spellbook.lua). A/D (configurable), the arrows or the mouse wheel turn the pages; the eraser or right click
 -- removes part of a drawing, the clear button empties the page, Undo or Ctrl+Z takes back the last change (book_undo.lua).
--- Shift (configurable) held, the pen draws with a compass: a true ring (book_compass.lua). The configured key, Esc or a
--- click outside closes it.
+-- Shift (configurable) held, the pen draws with a compass: a true ring (book_compass.lua). Ctrl (configurable) held
+-- with the pen, it draws a straight line: pressed where the line begins, dragged to where it ends, shown where it will
+-- lie while the mouse moves (book_line.lua). The configured key, Esc or a click outside closes it.
 -- Drawing spends witch ink (ink.lua): the bottles beside the book are the inks in the flasks, a click picks the one to
 -- draw with, and a seal takes on the inks it is drawn with. Sheets with seals found in the world (sheets.lua) are
 -- pasted in as pages of their own, into a book that holds them. The button over the book opens its other part, the
@@ -596,7 +597,7 @@ local function turn_pages( by )
 	local to = math.max( 1, math.min( last_spread(), cur.spread + queued + by ) )
 	if to == cur.spread + queued then return end
 	queued = to - cur.spread
-	is_drawing, BookCompass.gesture = false, nil -- a line being drawn just ends
+	is_drawing, BookCompass.gesture, BookLine.gesture = false, nil, nil -- a line being drawn just ends
 	tear = nil
 end
 
@@ -696,7 +697,7 @@ local function toggle_wiki()
 	cur.spread = wiki and cur.wiki_spread or cur.own_spread
 	cur.spread = math.max( 1, math.min( cur.spread, last_spread() ) )
 	flips, queued, drag, tear, hover_entry = {}, 0, nil, nil, nil
-	is_drawing, BookCompass.gesture = false, nil
+	is_drawing, BookCompass.gesture, BookLine.gesture = false, nil, nil
 	K.lasso, K.menu = nil, nil
 end
 
@@ -707,7 +708,7 @@ local function put_away()
 	if wiki and not cur.def.test then toggle_wiki() end
 	cur.spread = cur.spread + queued
 	flips, queued, drag = {}, 0, nil
-	is_drawing, BookCompass.gesture = false, nil -- a line being drawn just ends; it doesn't awaken the seal
+	is_drawing, BookCompass.gesture, BookLine.gesture = false, nil, nil -- a line being drawn just ends; it doesn't awaken the seal
 	cur.erase_last_x, cur.erase_last_y = nil, nil
 	K.lasso, K.menu = nil, nil
 	put_back_opened()
@@ -1116,6 +1117,8 @@ function witch_notebook_line_on_seal( mx, my )
 		cur.erase_last_x, cur.erase_last_y = x, y -- the eraser sweeps on from there
 	elseif book_compass_held() then
 		BookCompass.press( cur.edit, x, y ) -- the compass from there (witch_notebook_pen)
+	elseif book_line_held() then
+		BookLine.press( cur.edit, x, y ) -- the straight line from there (witch_notebook_pen)
 	elseif drawable( x, y ) and ( amounts[selected_ink] or 0 ) >= 1 then
 		pen_to( x, y, get_player() )
 	end
@@ -1123,12 +1126,17 @@ end
 
 -- The pen on the page drawn on at x, y (page units; 'inside': where it draws, 'ink': how much is left of the ink chosen):
 -- a line while the left button is held - with the compass key held, the compass's (book_compass.lua): set from the
--- ring's middle, or a line along its circle wherever the mouse goes. notebook_update reaches this by its global name.
+-- ring's middle, or a line along its circle wherever the mouse goes; with the line key held, a straight one from where
+-- it was pressed to where the mouse is (book_line.lua), drawn when the button is let go. notebook_update reaches this
+-- by its global name.
 function witch_notebook_pen( x, y, inside, ink, player )
 	local C = BookCompass
+	local L = BookLine
 	local down = not cur.eraser_selected and not cur.marker_selected and InputIsMouseButtonDown( MOUSE_LEFT ) and not wait_release
 	if C.gesture and C.gesture.page ~= cur.edit then C.gesture = nil end
-	if not C.gesture and down and inside and not is_drawing and book_compass_held() then C.press( cur.edit, x, y ) end
+	if L.gesture and L.gesture.page ~= cur.edit then L.gesture = nil end
+	if not C.gesture and not L.gesture and down and inside and not is_drawing and book_compass_held() then C.press( cur.edit, x, y ) end
+	if not C.gesture and not L.gesture and down and inside and not is_drawing and book_line_held() then L.press( cur.edit, x, y ) end
 	if C.gesture then
 		if not down then
 			C.release()
@@ -1141,6 +1149,20 @@ function witch_notebook_pen( x, y, inside, ink, player )
 			elseif is_drawing then end_stroke() end
 		end
 		return
+	end
+	if L.gesture then
+		if not down then
+			-- let go: the straight line from where it was pressed to where the mouse is, as far as the paper goes
+			local a, b = L.stretch( x, y, drawable )
+			L.gesture = nil
+			if a and ink >= 1 then
+				pen_to( a.x, a.y, player )
+				pen_to( b.x, b.y, player )
+			end
+			if is_drawing then end_stroke() end
+			return
+		end
+		return -- the button held: the line to the mouse shows on the page (draw_book: BookLine.draw)
 	end
 	if down and inside and ink >= 1 then
 		pen_to( x, y, player )
@@ -1459,7 +1481,7 @@ local function draw_page( face, pos, mx, my, still )
 		-- a seal that failed on one symbol: what it looks most like, and [Mark] - while its lines stay as they were
 		local page = editable_page( face )
 		if face == cur.edit_face and page.doubt and page.doubt.look == BookReading.look( page ) and not BookReading.reading( page )
-			and not K.menu and not K.lasso and not is_drawing and not BookCompass.gesture then
+			and not K.menu and not K.lasso and not is_drawing and not BookCompass.gesture and not BookLine.gesture then
 			K.draw_doubt( s, page, face, pos, mx - pos.x, my - pos.y, size )
 		end
 		-- the compass in hand (its key held with the pen) or at work: where it stands and its circle (book_compass.lua)
@@ -1467,6 +1489,14 @@ local function draw_page( face, pos, mx, my, still )
 		if compass and compass.page == editable_page( face ) or not compass and book_compass_held() and not cur.eraser_selected
 			and not cur.marker_selected and not K.menu and over_page( pos, mx, my ) then
 			BookCompass.draw( s, editable_page( face ), mx - pos.x, my - pos.y, drawable )
+		end
+		-- a straight line at hand (its key held with the pen) or drawn out: where it would begin, or the line to the mouse
+		local line = BookLine.gesture
+		if line and line.page == editable_page( face ) then
+			BookLine.draw( s, mx - pos.x, my - pos.y, drawable )
+		elseif not line and not compass and not K.menu and book_line_held() and not cur.eraser_selected
+			and not cur.marker_selected and over_page( pos, mx, my ) then
+			BookLine.mark( s, mx - pos.x, my - pos.y, drawable )
 		end
 		-- with "Mark" chosen: what the marked lines under the mouse are marked as
 		if cur.marker_selected and not K.menu and not K.lasso and over_page( pos, mx, my ) then
@@ -2123,9 +2153,11 @@ local function draw_book( mx, my, clicked, carried, menu_click )
 		or "Study and redraw the seals, " .. open_hint .. " - close" )
 		or not cur.eraser_selected and not cur.marker_selected and book_compass_held()
 			and "Compass: drag out from the middle to set it, then draw along its circle"
+		or not cur.eraser_selected and not cur.marker_selected and book_line_held()
+			and "Straight line: press where it begins, drag to where it ends"
 		or ( ( cur.eraser_selected and "LMB - erase, click an ink to draw"
 			or cur.marker_selected and "LMB - circle a sign to name it, click an ink to draw"
-			or "LMB - draw, RMB - erase, " .. book_compass_key_name() .. " - compass" ) .. ", " .. open_hint .. " - close" )
+			or "LMB - draw, RMB - erase, " .. book_compass_key_name() .. " - compass, " .. book_line_key_name() .. " - line" ) .. ", " .. open_hint .. " - close" )
 	local y = foot.y + 12
 	if foot.row then
 		D.centered( foot.x, foot.w, foot.y, hint, nil, 70 )
@@ -2364,9 +2396,10 @@ function witch_notebook_frame()
 	-- a line drawn or erased on from a drawn seal's page opens it
 	witch_notebook_line_on_seal( mx, my )
 
-	-- Any unfinished page can take more ink. Select it when drawing or erasing on that face (the compass at work keeps its
-	-- page, the mouse may go anywhere round it).
-	if not wiki and not turning() and not is_drawing and not BookMarks.lasso and not BookMarks.menu and not BookCompass.gesture then
+	-- Any unfinished page can take more ink. Select it when drawing or erasing on that face (the compass or a straight
+	-- line at work keeps its page, the mouse may go anywhere round it).
+	if not wiki and not turning() and not is_drawing and not BookMarks.lasso and not BookMarks.menu and not BookCompass.gesture
+		and not BookLine.gesture then
 		if InputIsMouseButtonDown( MOUSE_LEFT ) or InputIsMouseButtonDown( MOUSE_RIGHT ) then
 			if editable_page( back ) and drawable( mx - view.back.x, my - view.back.y ) then select_edit_page( back )
 			elseif editable_page( front ) and drawable( mx - view.front.x, my - view.front.y ) then select_edit_page( front ) end

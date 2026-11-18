@@ -1,6 +1,7 @@
 """The pen's helpers in the open book (notebook.lua): Undo (book_undo.lua) takes back the last line, erasing, marking or
 Clear - a seal that awoke from it opens again as a draft; the compass (book_compass.lua), its key held, draws a true
-ring - set from the middle, then along its circle wherever the mouse goes.
+ring - set from the middle, then along its circle wherever the mouse goes; the straight line (book_line.lua), its key
+held, runs from the press to the release, wherever the mouse wanders.
 
 Run with python tests/test_pen_tools.py.
 """
@@ -19,6 +20,7 @@ UNDO_BUTTON = 900096   # notebook.lua BUTTON.UNDO
 CLEAR_BUTTON = 900099  # BUTTON.CLEAR
 CTRL, Z = 224, 29      # data/scripts/debug/keycodes.lua: Key_LCTRL, Key_z
 SHIFT, RSHIFT = 225, 229  # Key_LSHIFT (the compass's key), Key_RSHIFT
+LCTRL, RCTRL = 224, 228   # Key_LCTRL (the straight line's key), Key_RCTRL
 
 
 def book():
@@ -206,6 +208,36 @@ def around(cx, cy, r, a0, a1, reach=None, step=0.05):
     return start + [(cx + reach * math.cos(a0 + (a1 - a0) * k / n), cy + reach * math.sin(a0 + (a1 - a0) * k / n)) for k in range(1, n + 1)]
 
 
+def straight(G, path, key=LCTRL, right=False):
+    """the mouse along 'path' (page units of a 180 page) with the button and the line's key held, then let go"""
+    x0 = R.RIGHT_X if right else R.LEFT_X
+    G.keys_down[key] = True
+    G.left_down = True
+    for i, (x, y) in enumerate(path):
+        G.mouse[1], G.mouse[2] = x0 + x, R.PAGE_Y + y
+        G.left_just_down = i == 0
+        G.notebook_update()
+    G.left_just_down = G.left_down = False
+    G.notebook_update()
+    G.keys_down[key] = False
+    G.notebook_update()
+
+
+def wobbly(a, b, wobble=20, seed=1):
+    """from a to b, wandering off the straight way between them"""
+    rng = random.Random(seed)
+    n = 14
+    out = []
+    for k in range(n + 1):
+        t = k / n
+        x, y = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+        if 0 < k < n:
+            x += rng.uniform(-wobble, wobble)
+            y += rng.uniform(-wobble, wobble)
+        out.append((x, y))
+    return out
+
+
 def page_strokes(lua, i=1):
     """the page's lines, each a list of its points"""
     lines = lua.eval("BookStore.load")("book").seals[i].strokes
@@ -305,6 +337,104 @@ class Compass(unittest.TestCase):
         for st in strokes[1:]:
             for p in st:
                 self.assertTrue(6 <= p.x <= 174 and 6 <= p.y <= 174)
+
+
+class StraightLine(unittest.TestCase):
+    def off_segment(self, a, b, p):
+        """how far the point p lies off the straight line a-b"""
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        return abs((p.x - a[0]) * dy - (p.y - a[1]) * dx) / math.hypot(dx, dy)
+
+    def test_a_straight_line_wherever_the_mouse_wanders(self):
+        # the line's key held, the mouse pressed and dragged a wandering way: one straight line, from the press to
+        # the release, however far off it went
+        lua, G = book()
+        a, b = (30, 30), (150, 120)
+        straight(G, wobbly(a, b))
+        strokes = page_strokes(lua)
+        self.assertEqual(1, len(strokes))
+        pts = strokes[0]
+        self.assertLess(max(self.off_segment(a, b, p) for p in pts), 0.15)  # (the page keeps points to a tenth)
+        self.assertLess(math.dist((pts[0].x, pts[0].y), a), 0.15)
+        self.assertLess(math.dist((pts[-1].x, pts[-1].y), b), 0.15)
+
+    def test_either_ctrl(self):
+        lua, G = book()
+        straight(G, wobbly((30, 30), (150, 120)), key=RCTRL)
+        self.assertEqual(1, lines(G))
+
+    def test_the_ink_of_the_line(self):
+        # the ink spent is the line's, not the mouse's way
+        lua, G = book()
+        a, b = (30, 30), (140, 110)
+        ink = G.flask.witch_ink
+        straight(G, wobbly(a, b))
+        pts = page_strokes(lua)[0]
+        length = sum(math.dist((p.x, p.y), (q.x, q.y)) for p, q in zip(pts, pts[1:]))
+        self.assertAlmostEqual(length, math.dist(a, b), delta=1)
+        self.assertAlmostEqual(ink - G.flask.witch_ink, length * G.INK_PER_UNIT, delta=2)
+
+    def test_a_click_draws_nothing(self):
+        lua, G = book()
+        straight(G, [(90, 90)])
+        self.assertEqual(0, lines(G))
+        G.mouse[1], G.mouse[2] = R.LEFT_X + 90, R.PAGE_Y + 90  # the pen still draws freehand without the key held
+        G.left_down = G.left_just_down = True; G.notebook_update(); G.left_just_down = False
+        G.mouse[1], G.mouse[2] = R.LEFT_X + 120, R.PAGE_Y + 92; G.notebook_update()
+        G.left_down = False; G.notebook_update()
+        self.assertEqual(1, lines(G))
+
+    def test_the_line_stops_off_the_paper(self):
+        # let go past the page's edge: the line runs to the edge and no further
+        lua, G = book()
+        straight(G, wobbly((40, 90), (250, 90), wobble=25))
+        pts = page_strokes(lua)[0]
+        for p in pts:
+            self.assertTrue(6 <= p.x <= 174 and 6 <= p.y <= 174)
+        self.assertLess(abs(pts[-1].x - 174), 0.15)
+
+    def test_taken_back(self):
+        lua, G = book()
+        straight(G, wobbly((30, 30), (150, 120)))
+        self.assertEqual(1, lines(G))
+        ctrl_z(G)
+        self.assertEqual(0, lines(G))
+
+    def test_the_key_let_go_first_still_draws(self):
+        # the gesture ends with the button, not the key (the compass's way)
+        lua, G = book()
+        a, b = (30, 30), (150, 120)
+        G.keys_down[LCTRL] = True
+        G.left_down = True
+        for i, (x, y) in enumerate(wobbly(a, b)):
+            G.mouse[1], G.mouse[2] = R.LEFT_X + x, R.PAGE_Y + y
+            G.left_just_down = i == 0
+            G.notebook_update()
+        G.keys_down[LCTRL] = False  # the key let go, the button still held
+        G.notebook_update()
+        G.left_down = False
+        G.notebook_update()
+        self.assertEqual(1, lines(G))
+        pts = page_strokes(lua)[0]
+        self.assertLess(max(self.off_segment(a, b, p) for p in pts), 0.15)
+
+    def test_the_key_mid_line_draws_freehand(self):
+        # the pen already drawing when the key is pressed: the line goes on freehand, not straightened
+        lua, G = book()
+        a, b = (30, 30), (150, 120)
+        G.left_down = True
+        path = wobbly(a, b, wobble=25)
+        G.mouse[1], G.mouse[2] = R.LEFT_X + path[0][0], R.PAGE_Y + path[0][1]
+        G.left_just_down = True; G.notebook_update(); G.left_just_down = False
+        G.keys_down[LCTRL] = True
+        for x, y in path[1:]:
+            G.mouse[1], G.mouse[2] = R.LEFT_X + x, R.PAGE_Y + y
+            G.notebook_update()
+        G.left_down = False; G.notebook_update()
+        G.keys_down[LCTRL] = False; G.notebook_update()
+        strokes = page_strokes(lua)
+        self.assertEqual(1, len(strokes))
+        self.assertGreater(max(self.off_segment(a, b, p) for p in strokes[0]), 5)
 
 
 DOUBT = r'''

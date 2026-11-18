@@ -95,6 +95,14 @@ mod_settings = {
 		ui_fn = key_setting_ui,
 	},
 	{
+		id = "line_key",
+		ui_name = "Straight line (hold)",
+		ui_description = "Held while drawing: press where the line begins and drag to where it ends - a straight line, shown\nwhere it will lie while you drag, cut where it crosses the paper's edge.\nClick, then press a key. Right-click to reset to Left Ctrl. Esc cancels.",
+		value_default = 224,
+		scope = MOD_SETTING_SCOPE_RUNTIME,
+		ui_fn = key_setting_ui,
+	},
+	{
 		id = "open_rmb",
 		ui_name = "RMB opens the held book",
 		ui_description = "Right mouse button opens the book in your hand. Turn off to open it only with the key above.\nInside the book RMB still erases.",
