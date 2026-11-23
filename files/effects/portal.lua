@@ -59,6 +59,7 @@ MODES.hand = function( e, p, age, x, y )
 		EntityKill( e )
 		return
 	end
+	if age == 0 then effect_sound( "teleport", x, y ) end
 	local other = partner( p )
 	window( x, y, 4, 6, age, p.element, math.min( 1, age / 12 ) )
 	if not other then return end
@@ -110,6 +111,7 @@ MODES.mark = function( e, p, age, x, y )
 		EntityKill( e )
 		return
 	end
+	if age == 0 then effect_sound( "teleport", x, y ) end
 	if age % 4 == 0 then
 		local c = color_abgr_merge( 255, 220, 140, 200 )
 		for k = 0, 4 do

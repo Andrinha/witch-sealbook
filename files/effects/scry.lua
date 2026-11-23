@@ -13,6 +13,7 @@ MODES.gaze = function( e, p, age, x, y )
 	end
 	local ox, oy = EntityGetTransform( owner )
 	if age == 0 then
+		effect_sound( "magic", ox, oy ) -- a soft cue at the caster as the gaze leaves
 		GameSetCameraFree( true )
 		EntityAddComponent2( e, "FogOfWarRemoverComponent", { radius = 180 } )
 		EntitySetTransform( e, p.tx, p.ty )

@@ -38,12 +38,11 @@ SPIN_VAR = "witch_spin" -- spin of turned signs on a projectile (behaviors/spin.
 -- drawing, to light it up in the air
 SPELLBOOK_NEXT_CAST_VAR = "witch_notebook_next_cast" -- on the book: the frame it can cast again ('value_int') and how
                                                      -- long it waits since the last cast ('value_float', frames)
-LAST_SPELL_VAR = "witch_notebook.last_cast" -- the last spell cast, for the Repetition Seal
 AMPLIFY_VAR = "witch_notebook.amplify" -- casts left that the Amplification Scroll strengthens
 REMOTE_VAR = "witch_notebook.remote" -- the cloak (Sasaran's Cloak) the next spells are cast from
 
 local FIELDS_NUMBERS = { force = true, focus = true, spread = true, range = true, lifetime = true, heavy = true, tilt = true,
-	push_x = true, push_y = true, stability = true, precision = true, layers = true, glaives = true, span = true }
+	push_x = true, push_y = true, stability = true, precision = true, layers = true, glaives = true, span = true, repeats = true }
 
 -- one "element=ice;form=column;...;b=pull:1.2,spin:-0.8" -> table
 local function parse_one( data )
@@ -64,6 +63,32 @@ local function parse_one( data )
 	-- seals drawn before signs had behaviors
 	if not ( data or "" ):find( "b=", 1, true ) and spell.form == "levitation" then spell.behaviors.float = 1 end
 	return spell
+end
+
+-- A parsed spell back to what a page keeps, with the seals inside it and linked to it after "&". Pages are written
+-- by the reading context (seal_spell.lua serialize_spell); the casting context makes one again for the Repetition's
+-- seal, which hands the seal it is drawn in to its effect (manifest.lua M.repeat). Keep the fields in step with
+-- parse_one above and seal_spell.lua SPELL_FIELDS.
+local DATA_FIELDS = { "element", "form", "force", "focus", "spread", "range", "lifetime", "heavy", "tilt", "push_x", "push_y",
+	"stability", "precision", "floats", "directed", "shape", "manifest", "named", "frame", "layers", "glaives", "forbidden",
+	"span", "repeats", "resonance", "ink" }
+function spell_data( spell )
+	local parts, b = {}, {}
+	for _, key in ipairs( DATA_FIELDS ) do
+		local v = spell[key]
+		if v ~= nil and v ~= false then
+			parts[#parts + 1] = key .. "=" .. ( type( v ) == "number" and tostring( math.floor( v * 100 + 0.5 ) / 100 ) or tostring( v ) )
+		end
+	end
+	for _, behavior in ipairs( DICTIONARY_BEHAVIORS ) do
+		local w = ( spell.behaviors or {} )[behavior.key]
+		if w then b[#b + 1] = behavior.key .. ":" .. tostring( w ) end
+	end
+	if #b > 0 then parts[#parts + 1] = "b=" .. table.concat( b, "," ) end
+	local out = table.concat( parts, ";" )
+	for _, sub in ipairs( spell.subs or {} ) do out = out .. "&sub:" .. spell_data( sub ) end
+	for _, link in ipairs( spell.links or {} ) do out = out .. "&link:" .. spell_data( link ) end
+	return out
 end
 
 -- the page's spell with the seals inside it ("&sub:...") and linked to it ("&link:...")
@@ -113,6 +138,8 @@ function seal_recharge( spell )
 		frames = RECHARGE_SCULPTURE
 	elseif spell.manifest then
 		frames = RECHARGE_MANIFEST
+		-- the Repetition's seal casts its spell as many times as its sigil is drawn: every time beyond the first is paid for
+		if spell.manifest == "repeat" then frames = frames * math.max( 1, math.floor( spell.repeats or 1 ) ) end
 	elseif spell.element ~= "" and spell.element ~= "shockwave" then
 		local effect = dictionary_effect( spell.element, spell.form, spell.floats )
 		if effect then
@@ -168,6 +195,18 @@ local function scale_size( projectile, k )
 		ComponentSetValue2( sprite, "has_special_scale", true )
 		ComponentSetValue2( sprite, "special_scale_x", k )
 		ComponentSetValue2( sprite, "special_scale_y", k )
+	end
+	-- a black hole eats the world by a radius of its own, not by its blast's (the game's CellEaterComponent), and its
+	-- sparks spread as wide: the game's own growing black hole keeps them together (black_hole_big.lua)
+	local eater = EntityGetFirstComponentIncludingDisabled( projectile, "CellEaterComponent" )
+	if eater then
+		ComponentSetValue2( eater, "radius", ComponentGetValue2( eater, "radius" ) * k )
+		for _, emitter in ipairs( EntityGetComponentIncludingDisabled( projectile, "ParticleEmitterComponent" ) or {} ) do
+			ComponentSetValue2( emitter, "x_pos_offset_min", ComponentGetValue2( emitter, "x_pos_offset_min" ) * k )
+			ComponentSetValue2( emitter, "x_pos_offset_max", ComponentGetValue2( emitter, "x_pos_offset_max" ) * k )
+			ComponentSetValue2( emitter, "y_pos_offset_min", ComponentGetValue2( emitter, "y_pos_offset_min" ) * k )
+			ComponentSetValue2( emitter, "y_pos_offset_max", ComponentGetValue2( emitter, "y_pos_offset_max" ) * k )
+		end
 	end
 end
 
@@ -908,7 +947,13 @@ function cast_spell( shooter, spell, x, y, aim_x, aim_y, target_x, target_y, fra
 
 	local cast
 	local manifest = spell.manifest and MANIFESTS and MANIFESTS[spell.manifest]
-	if manifest then
+	if spell.manifest == "repeat" and manifest then
+		-- the Repetition's sigil doesn't take the seal's place: the seal casts its own magic once, and the sigil
+		-- brings it again, as many times as it is drawn (manifest.lua M.repeat)
+		cast = cast_form( ctx )
+		local more = manifest( ctx ) or { "manifest:repeat" }
+		for _, f in ipairs( more ) do cast[#cast + 1] = f end
+	elseif manifest then
 		cast = manifest( ctx ) or { "manifest:" .. spell.manifest }
 	elseif spell.shape and MANIFESTS and MANIFESTS.sculpture then
 		cast = MANIFESTS.sculpture( ctx ) or { "sculpture:" .. spell.shape }
@@ -982,7 +1027,6 @@ function spellbook_use( item, holder, controls, frame )
 	end
 	local strokes = strokes_decode( GlobalsGetValue( book_var( book.key, "active_strokes" ), "" ) )
 	local spell = parse_spell_data( data )
-	if spell.manifest ~= "repeat" then GlobalsSetValue( LAST_SPELL_VAR, data ) end
 	local made = cast_spell( holder, spell, x, y - 4, aim_x, aim_y, target_x, target_y, frame, strokes )
 	for _, e in ipairs( made ) do
 		if type( e ) == "number" and EntityGetIsAlive( e ) then

@@ -74,6 +74,7 @@ end
 -- Quake: the ground round the wave shakes; creatures standing on it within p.r are thrown up and hurt, now and again
 MODES.quake = function( e, p, age, x, y )
 	if effect_done( e, p, age ) then return end
+	if age == 0 then effect_sound( "earth", x, y ) end -- the ground rumbles as the quake opens
 	if age % 6 ~= 0 then return end
 	if GameScreenshake then GameScreenshake( 4 ) end
 	local r = p.r or 80
@@ -91,17 +92,6 @@ MODES.quake = function( e, p, age, x, y )
 		local hx, hy = ground_below( gx, y - 20, 60 )
 		if hy then fx_dot( gx, hy - 1, effect_color( "earth", 0.3, 0.9 ), Random( -10, 10 ), -Random( 30, 70 ), 0.4, 60 ) end
 	end
-end
-
--- the kind of damage an element deals most, as EntityInflictDamage names it
-local KINDS = { fire = "DAMAGE_FIRE", ice = "DAMAGE_ICE", slice = "DAMAGE_SLICE", electricity = "DAMAGE_ELECTRICITY",
-	explosion = "DAMAGE_EXPLOSION", projectile = "DAMAGE_PROJECTILE" }
-local function damage_kind( element )
-	local best, most = "DAMAGE_PROJECTILE", 0
-	for kind, v in pairs( ( DICTIONARY_LOOKS[element] or {} ).damage or {} ) do
-		if v > most then best, most = KINDS[kind] or best, v end
-	end
-	return best
 end
 
 -- a jagged line of lightning from one point to another
@@ -123,6 +113,7 @@ MODES.arcs = function( e, p, age )
 	if not owner or effect_done( e, p, age ) then return end
 	if age % 12 ~= 0 then return end
 	local color = effect_color( p.element, 0.8 )
+	local struck = false
 	for _, id in ipairs( creatures_in( x, y, p.reach or 90, owner ) ) do
 		local ex, ey = EntityGetTransform( id )
 		ey = ey + creature_body( id )
@@ -130,14 +121,17 @@ MODES.arcs = function( e, p, age )
 			bolt_line( x, y, ex, ey, color )
 			seal_damage( id, 0.25 * ( p.power or 1 ), "DAMAGE_ELECTRICITY", owner, ex, ey )
 			give_effect( id, MISC .. "effect_electricity.xml", 30 )
+			struck = true
 		end
 	end
+	if struck then effect_sound( "spark", x, y ) end -- the storm speaks with the game's own lightning
 end
 
 -- Updraft: the wind rises round the caster - they fly without tiring, the creatures near them are blown up
 MODES.updraft = function( e, p, age )
 	local owner, x, y = effect_follow( e, p, -4 )
 	if not owner or effect_done( e, p, age ) then return end
+	if age == 0 then effect_sound( "gust", x, y ) end
 	local cd = EntityGetFirstComponent( owner, "CharacterDataComponent" )
 	if cd then ComponentSetValue2( cd, "mFlyingTimeLeft", ComponentGetValue2( cd, "fly_time_max" ) ) end
 	if age % 3 == 0 then
@@ -189,6 +183,7 @@ MODES.fissure = function( e, p, age, x, y )
 		EntityKill( e )
 		return
 	end
+	if age == 0 then effect_sound( "earth", x, y ) end -- the crack rumbles open
 	EntitySetTransform( e, nx, gy )
 	effect_set( e, "run", run )
 	if age == 0 then convert_around( e, GRINDS.from, GRINDS.to, 5, 3 ) end
@@ -200,7 +195,7 @@ MODES.fissure = function( e, p, age, x, y )
 		if not hit[id] then
 			hit[id], struck = true, true
 			local ex, ey = EntityGetTransform( id )
-			seal_damage( id, 0.35 * ( p.power or 1 ), damage_kind( p.element ), p.owner, ex, ey )
+			seal_damage( id, 0.35 * ( p.power or 1 ), effect_damage_kind( p.element ), p.owner, ex, ey )
 			push_creature( id, dir * 30, -180 )
 		end
 	end

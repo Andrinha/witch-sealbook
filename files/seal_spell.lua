@@ -61,6 +61,24 @@ local function weak_symbols( seal )
 	return weak
 end
 
+local function finish_oriented_signs( behaviors, turn, dir_w, turned_signs )
+	-- At least two directional signs must turn sideways together; one imperfect arrow only directs the spell.
+	local spin = dir_w > 0 and clamp( turn / dir_w / SPIN_TURN, -1, 1 ) or 0
+	if turned_signs >= 2 and math.abs( spin ) >= MIN_SPIN then behaviors.spin = spin end
+	if behaviors.whirl then
+		if math.abs( behaviors.whirl ) < CANCELLED then behaviors.whirl = nil end
+	end
+	if behaviors.pierce then behaviors.pierce = math.min( behaviors.pierce, MAX_PIERCE ) end
+	-- a sign and the same sign inverted cancel out: only the difference is left
+	for _, b in ipairs( DICTIONARY_BEHAVIORS ) do
+		if b.opposite then
+			local net = ( behaviors[b.key] or 0 ) - ( behaviors[b.opposite] or 0 )
+			behaviors[b.key], behaviors[b.opposite] = nil, nil
+			if net >= CANCELLED then behaviors[b.key] = net elseif net <= -CANCELLED then behaviors[b.opposite] = -net end
+		end
+	end
+end
+
 -- Returns the spell { element, form, force, focus, spread, range, lifetime, heavy, tilt, push_x, push_y,
 -- stability, precision, behaviors = { key = weight }, shape, manifest, frame, layers, glaives, subs, links,
 -- summary, quality } or nil and an error text
@@ -80,7 +98,7 @@ function compile_spell( seal )
 		if symbol.kind == "sigil" then
 			local def = DICTIONARY_SIGILS[symbol.key] or {}
 			if def.element then sigils[#sigils + 1] = symbol end
-			if def.manifest or def.shape or def.behavior then specials[#specials + 1] = symbol end
+			if def.manifest or def.shape or def.behavior or def.self then specials[#specials + 1] = symbol end
 		else
 			-- Keep ambiguous candidates in the parse so segmentation can finish, but do not silently
 			-- turn them into effects. The player can correct the sign and retry the closed seal.
@@ -112,11 +130,16 @@ function compile_spell( seal )
 
 	-- special sigils: a way of manifesting (the first one drawn biggest), a creature's shape, a behavior
 	table.sort( specials, function( a, b ) return a.size > b.size end )
+	local repeats, selected = 0, false
 	for _, symbol in ipairs( specials ) do
 		local def = DICTIONARY_SIGILS[symbol.key]
 		if def.shape and not spell.shape then spell.shape = def.shape end
 		if def.manifest and not spell.manifest then spell.manifest = def.manifest end
 		if def.forbidden then spell.forbidden = true end
+		-- the Selection's sigil: its seal works on the witch herself (the form it takes, below)
+		if def.self then selected = true end
+		-- the Repetition's sigil, drawn this many times, makes the seal come again as many times (manifest.lua)
+		if symbol.key == "repetition" then repeats = repeats + 1 end
 	end
 	if frame_def and frame_def.manifest and not spell.manifest then spell.manifest = frame_def.manifest end
 	if seal.band == "windows" then spell.manifest = "portal" end
@@ -125,10 +148,12 @@ function compile_spell( seal )
 	-- the same sigil again adds power, bigger sigils a bigger effect
 	local element
 	if #sigils == 0 then
-		if #signs > 0 and not spell.manifest and not spell.shape then return nil, "No element sigil" end
-		element = ( spell.manifest or spell.shape ) and "light" or "shockwave" -- the wiki: closing an empty ring makes a shockwave
+		if #signs > 0 and not spell.manifest and not spell.shape and not selected then return nil, "No element sigil" end
+		-- a special sigil's seal works in the light; the Selection's (a field round the caster, below) too
+		element = ( spell.manifest or spell.shape or selected ) and "light" or "shockwave" -- the wiki: closing an empty ring makes a shockwave
 		if spell.manifest == "shadow" or spell.manifest == "oblivion" then element = "smoke" end
-		if spell.manifest == "cloud" then element = "sand" end
+		-- the Billow's own cloud is not of sand: it is a soft white cloud of air, and crumbles into snow
+		if spell.manifest == "cloud" then element = "air" end
 	else
 		local kinds, seen, area, weight = {}, {}, 0, {}
 		for _, sigil in ipairs( sigils ) do
@@ -234,21 +259,7 @@ function compile_spell( seal )
 			behaviors.bound = ( behaviors.bound or 0 ) + inward * 0.5
 		end
 	end
-	-- At least two directional signs must turn sideways together; one imperfect arrow only directs the spell.
-	local spin = dir_w > 0 and clamp( turn / dir_w / SPIN_TURN, -1, 1 ) or 0
-	if turned_signs >= 2 and math.abs( spin ) >= MIN_SPIN then behaviors.spin = spin end
-	if behaviors.whirl then
-		if math.abs( behaviors.whirl ) < CANCELLED then behaviors.whirl = nil end
-	end
-	if behaviors.pierce then behaviors.pierce = math.min( behaviors.pierce, MAX_PIERCE ) end
-	-- a sign and the same sign inverted cancel out: only the difference is left
-	for _, b in ipairs( DICTIONARY_BEHAVIORS ) do
-		if b.opposite then
-			local net = ( behaviors[b.key] or 0 ) - ( behaviors[b.opposite] or 0 )
-			behaviors[b.key], behaviors[b.opposite] = nil, nil
-			if net >= CANCELLED then behaviors[b.key] = net elseif net <= -CANCELLED then behaviors[b.opposite] = -net end
-		end
-	end
+	finish_oriented_signs( behaviors, turn, dir_w, turned_signs )
 	-- a special sigil's own behavior (the Sigil of Purification purifies)
 	for _, symbol in ipairs( specials ) do
 		local def = DICTIONARY_SIGILS[symbol.key]
@@ -273,6 +284,9 @@ function compile_spell( seal )
 		spell.form = "field"
 		behaviors.still = nil
 	end
+	-- the Selection's sigil: its seal is drawn in the witch's own book, and works on no object but her - whatever
+	-- the signs vote, the spell takes no flight: it stands round the caster as a field (the wiki's Sign of Selection)
+	if selected then spell.form = "field" end
 	local base = DICTIONARY_ELEMENTS[element]
 	if condense > 0 and base.condensed then element = base.condensed end
 	spell.element = element
@@ -370,6 +384,9 @@ function compile_spell( seal )
 		spell.resonance = resonance.key
 		if resonance.forbidden then spell.forbidden = true end
 	end
+	-- how many times the Repetition's sigil is drawn in this seal (a wiki's page casts as its own page: the count
+	-- is the witch's seal's alone)
+	if spell.manifest == "repeat" and repeats > 0 then spell.repeats = repeats end
 	if not named and count > 0 then
 		-- a sigil the witch marked is what she said, however roughly drawn: only its precision tells
 		local sigil_quality, sigil_count = 0, 0
@@ -428,13 +445,28 @@ function seal_page_title( entry, element )
 end
 
 -- The spell in words: the wiki's name, if it is one of its seals, or what it does
+local function blade_sign_summary( b, weight )
+	if b.key == "thrust" or b.key == "spin" or b.key == "whirl" then return nil end
+	if b.key == "pierce" then return "piercing bolts x" .. dictionary_blade_bolts( weight ) end
+	return b.text
+end
+
 function spell_summary( spell, carrier )
 	local entry = spell.named and GRIMOIRE_BY_KEY and GRIMOIRE_BY_KEY[spell.named]
 	if entry then
 		-- and what the signs drawn on top of it add
 		local parts = { seal_page_title( entry, spell.swapped ) }
+		local sword = entry.key == "raincleaver"
+		local extras = spell.extras or {}
+		if sword and ( extras.thrust or extras.spin or extras.whirl ) then
+			parts[#parts + 1] = dictionary_blade_stroke( extras )
+		end
 		for _, b in ipairs( DICTIONARY_BEHAVIORS ) do
-			if spell.extras and spell.extras[b.key] and b.text then parts[#parts + 1] = b.text end
+			if extras[b.key] then
+				local text = b.text
+				if sword then text = blade_sign_summary( b, extras[b.key] ) end
+				if text then parts[#parts + 1] = text end
+			end
 		end
 		return table.concat( parts, ", " )
 	end
@@ -444,7 +476,7 @@ function spell_summary( spell, carrier )
 	if spell.shape then
 		parts[#parts + 1] = "sculpture: " .. DICTIONARY_SIGILS[spell.shape].name:lower()
 	elseif manifest then
-		parts[#parts + 1] = manifest
+		parts[#parts + 1] = spell.manifest == "blade" and ( manifest .. " " .. dictionary_blade_stroke( spell.behaviors ) ) or manifest
 	elseif spell.element ~= "shockwave" then
 		parts[#parts + 1] = spell.floats and "floats in place" or DICTIONARY_FORMS[spell.form]
 	end
@@ -454,9 +486,10 @@ function spell_summary( spell, carrier )
 	for _, b in ipairs( DICTIONARY_BEHAVIORS ) do
 		local text = b["text_" .. carrier] or b.text
 		local w = spell.behaviors[b.key]
+		if w and spell.manifest == "blade" then text = blade_sign_summary( b, w ) end
 		if resonance and w and ( resonance.consumed[b.key] or not dictionary_behavior_works( b.key, carrier ) ) then w = nil end
 		if text and w then
-			parts[#parts + 1] = text .. ( b.key == "pierce" and w > 1 and " x" .. w or "" )
+			parts[#parts + 1] = text .. ( b.key == "pierce" and spell.manifest ~= "blade" and w > 1 and " x" .. w or "" )
 		end
 	end
 	if spell.directed then
@@ -468,7 +501,7 @@ function spell_summary( spell, carrier )
 end
 
 -- Signs drawn on a wiki's seal beyond its own (read with confidence): what they add to its spell, { behavior = weight }
--- or nil. Signs that make the form (columns, levitation, regions) don't reshape a wiki's seal.
+-- or nil. A Column can change a blade's stroke while the page keeps its original form.
 local EXTRA_SURE = 0.7
 function extra_behaviors( seal, entry )
 	-- what the page's spell is carried by, or its own way of manifesting: only the signs that work on it count
@@ -481,6 +514,7 @@ function extra_behaviors( seal, entry )
 		for k, n in signature:gmatch( "([%w_:]+)=(%d+)" ) do want[k] = math.max( want[k] or 0, tonumber( n ) ) end
 	end
 	local have, extras = {}, {}
+	local turn, dir_w, turned_signs = 0, 0, 0
 	for _, sym in ipairs( seal.symbols or {} ) do
 		if sym.kind == "sign" and sym.score >= EXTRA_SURE and sym.size >= SIGN_MIN_SIZE then
 			local k = "sign:" .. sym.key
@@ -489,12 +523,21 @@ function extra_behaviors( seal, entry )
 				local def = DICTIONARY_SIGNS[sym.key]
 				local effect = ( sym.inverted and def.invertible ~= false and def.inverted ) or def
 				local b = effect.behavior
-				if b and b ~= "regions" and b ~= "thrust" and b ~= "float" and sign_works( b, element, carrier, own ) then
-					extras[b] = ( extras[b] or 0 ) + ( b == "pierce" and 1 or clamp( sym.size / SIGN_SIZE, 0.5, 1.8 ) )
+				local weight = clamp( sym.size / SIGN_SIZE, 0.5, 1.8 )
+				if own == "blade" and def.type == "directional" and b ~= "regions" then
+					local angle = sym.turn or 0
+					turn, dir_w = turn + angle * weight, dir_w + weight
+					if math.abs( angle ) >= MIN_SPIN * SPIN_TURN then turned_signs = turned_signs + 1 end
+				end
+				if b and b ~= "regions" and ( b ~= "thrust" or own == "blade" ) and b ~= "float" and sign_works( b, element, carrier, own ) then
+					if b == "pierce" then weight = 1 end
+					if b == "whirl" and own == "blade" and sym.mirror then weight = -weight end
+					extras[b] = ( extras[b] or 0 ) + weight
 				end
 			end
 		end
 	end
+	if own == "blade" then finish_oriented_signs( extras, turn, dir_w, turned_signs ) end
 	return next( extras ) and extras or nil
 end
 
@@ -608,7 +651,7 @@ end
 
 local SPELL_FIELDS = { "element", "form", "force", "focus", "spread", "range", "lifetime", "heavy", "tilt", "push_x", "push_y",
 	"stability", "precision", "floats", "directed", "shape", "manifest", "named", "frame", "layers", "glaives", "forbidden", "span",
-	"resonance" }
+	"repeats", "resonance" }
 
 -- Stored on the spellbook's page and read back when it is cast (cast.lua): "element=fire;...;b=pull:1.2,spin:-0.8".
 -- Seals inside the seal and linked seals follow, each after "&".

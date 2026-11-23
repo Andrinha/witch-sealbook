@@ -11,7 +11,7 @@ FONT = ImageFont.truetype("C:/Windows/Fonts/segoeui.ttf", 18)
 REFERENCE = Path(__file__).resolve().parents[2] / "reference/wha-wiki/images"
 
 
-def render(shape, element):
+def render(shape, element, behaviors=""):
     lua = world_runtime()
     lua.execute('''
         EntityRemoveComponent(PLAYER, EntityGetFirstComponent(PLAYER, "CharacterDataComponent"))
@@ -26,7 +26,7 @@ def render(shape, element):
         particles.append((tick[0], x, y, vx, vy, rgb, (packed >> 24) / 255, max(lmin, 1 / 60)))
 
     lua.globals().GameCreateCosmeticParticle = particle
-    e = cast_shape(lua, shape, element)[1]
+    e = cast_shape(lua, shape, element, behaviors)[1]
     frames = []
     for frame in range(96):
         tick[0] = frame
@@ -34,7 +34,8 @@ def render(shape, element):
         x, y, *_ = lua.eval("EntityGetTransform")(e)
         bg = Image.new("RGB", (640, 360), (17, 20, 29))
         draw = ImageDraw.Draw(bg)
-        scale, ox, oy = 3, 320 - x * 3, 215 - y * 3
+        scale = 2 if shape == "dragon" else 3
+        ox, oy = 320 - x * scale, 215 - y * scale
         if shape in ("horse", "scalewolf", "torchstag", "liongoat", "frillram"):
             draw.line((0, 218, 640, 218), fill=(58, 50, 48), width=2)
         light, glow = Image.new("RGB", bg.size), Image.new("RGB", bg.size)
@@ -53,12 +54,14 @@ def render(shape, element):
         particles = keep
         bg = ImageChops.add(ImageChops.add(bg, glow.filter(ImageFilter.GaussianBlur(3))), light)
         draw = ImageDraw.Draw(bg)
-        draw.text((16, 12), f"{shape.title()} / {element}", fill=(235, 215, 180), font=FONT)
+        label = " / ".join(filter(None, (shape.title(), element, behaviors)))
+        draw.text((16, 12), label, fill=(235, 215, 180), font=FONT)
         draw.text((16, 330), "Offline Lua particle preview - camera follows the sculpture", fill=(125, 127, 140), font=FONT)
         frames.append(bg)
-    frames[0].save(OUT / f"decorative_{shape}_{element}.gif", save_all=True,
+    variant = "_" + behaviors.replace(":", "_").replace(",", "_") if behaviors else ""
+    frames[0].save(OUT / f"decorative_{shape}_{element}{variant}.gif", save_all=True,
                    append_images=frames[1:], duration=33, loop=0)
-    return frames[60]
+    return frames[90 if shape == "fish" else 60]
 
 
 def reference_sheet():
@@ -87,8 +90,13 @@ def reference_sheet():
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
     sheet = Image.new("RGB", (1280, 1800), (17, 20, 29))
+    variants = {
+        "bird": ("fire", "reflect:2"), "horse": ("thunder", "strong:2"), "dragon": ("steam", "grow:1"),
+        "fish": ("water", "pierce:2"), "owlcat": ("crystal", "still:2"), "scalewolf": ("wind", ""),
+        "torchstag": ("fire", ""), "liongoat": ("earth", ""), "frillram": ("frost", "shrink:1"),
+    }
     for i, shape in enumerate(SHAPES):
-        sheet.paste(render(shape, "fire" if shape == "torchstag" else "light"), ((i % 2) * 640, (i // 2) * 360))
+        sheet.paste(render(shape, *variants.get(shape, ("light", ""))), ((i % 2) * 640, (i // 2) * 360))
     sheet.save(OUT / "decorative_spells.png")
     reference_sheet()
     print(OUT / "decorative_spells.png")

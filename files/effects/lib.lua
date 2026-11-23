@@ -271,7 +271,7 @@ HIT_LOOK = { water = "water", ice = "water", storm = "water", steam = "water", s
 
 -- Reflection (a field, a sphere, a wave): enemies' projectiles between lo and hi from x, y that are coming in turn back
 -- the way they came, as the caster's own
-function reflect_projectiles( x, y, lo, hi, owner )
+function reflect_projectiles( x, y, lo, hi, owner, in_stroke )
 	local genome = owner ~= 0 and EntityGetFirstComponent( owner, "GenomeDataComponent" )
 	for _, id in ipairs( EntityGetInRadiusWithTag( x, y, hi, "projectile" ) or {} ) do
 		local proj = EntityGetFirstComponent( id, "ProjectileComponent" )
@@ -280,7 +280,7 @@ function reflect_projectiles( x, y, lo, hi, owner )
 			local px, py = EntityGetTransform( id )
 			local dx, dy = px - x, py - y
 			local vx, vy = ComponentGetValue2( vel, "mVelocity" )
-			if dx * dx + dy * dy >= lo * lo and dx * vx + dy * vy < 0 then
+			if dx * dx + dy * dy >= lo * lo and dx * vx + dy * vy < 0 and ( not in_stroke or in_stroke( px, py ) ) then
 				ComponentSetValue2( vel, "mVelocity", -vx, -vy )
 				ComponentSetValue2( proj, "mWhoShot", owner )
 				if genome then ComponentSetValue2( proj, "mShooterHerdId", ComponentGetValue2( genome, "herd_id" ) ) end
@@ -290,11 +290,32 @@ function reflect_projectiles( x, y, lo, hi, owner )
 	end
 end
 
+-- Reflection on a creature forms a small ward centred on its body.
+function sculpture_reflection( p, age, x, y )
+	if ( p.reflect or 0 ) <= 0 or age >= p.frames then return end
+	local radius = ( 13 + 4 * math.min( 3, p.reflect ) ) * ( p.big or 1 )
+	if age % 3 == 0 then reflect_projectiles( x, y, 0, radius, p.owner or 0 ) end
+	if age % 6 == 0 then
+		fx_ring( x, y, radius, effect_color( p.element or "light", 0.6, 0.55 ), 18, 0, 0.12 )
+	end
+end
+
 -- the effect that holds the creature with this look, if any
 function held_as( id, look )
 	for _, child in ipairs( EntityGetAllChildren( id ) or {} ) do
 		if EntityGetName( child ) == "witch_held_" .. look then return child end
 	end
+end
+
+-- the kind of damage an element deals most, as EntityInflictDamage names it
+local KINDS = { fire = "DAMAGE_FIRE", ice = "DAMAGE_ICE", slice = "DAMAGE_SLICE", electricity = "DAMAGE_ELECTRICITY",
+	explosion = "DAMAGE_EXPLOSION", projectile = "DAMAGE_PROJECTILE" }
+function effect_damage_kind( element )
+	local best, most = "DAMAGE_PROJECTILE", 0
+	for kind, v in pairs( ( DICTIONARY_LOOKS[element] or {} ).damage or {} ) do
+		if v > most then best, most = KINDS[kind] or best, v end
+	end
+	return best
 end
 
 -- Damage done by the seal's caster
@@ -389,6 +410,8 @@ function effect_sound( event, x, y )
 		earth = { "data/audio/Desktop/projectiles.snd", "player_projectiles/crumbling_earth/create" },
 		beam = { "data/audio/Desktop/misc.bank", "misc/beam_from_sky_hit" },
 		heart = { "data/audio/Desktop/event_cues.bank", "event_cues/heart_fullhp/create" },
+		spark = { "data/audio/Desktop/projectiles.bank", "player_projectiles/bullet_lightning/create" },
+		gust = { "data/audio/Desktop/projectiles.bank", "player_projectiles/bullet_burst_of_air/create" },
 	}
 	local s = banks[event] or banks.magic
 	GamePlaySound( s[1], s[2], x, y )

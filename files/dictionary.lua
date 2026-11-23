@@ -87,6 +87,7 @@ DICTIONARY_MIXES = {
 --   manifest: a way of manifesting of its own (cast.lua MANIFESTS), e.g. the Sigil of Wind Underfoot lifts
 --        the caster, Whorling Wind makes a whirlwind
 --   shape: a decorative sigil - the spell takes the creature's shape (a sculpture)
+--   self: the seal works on the object it is drawn on - the witch's own book, on herself (seal_spell.lua)
 --   hint: in the book's legend
 DICTIONARY_SIGILS = {
 	fire = { element = "fire" }, water = { element = "water" }, wind = { element = "wind" }, earth = { element = "earth" },
@@ -100,28 +101,30 @@ DICTIONARY_SIGILS = {
 	unburning = { element = "phantasm", name = "Unburning Flames", hint = "cold fire" },
 	underfoot = { element = "wind", manifest = "sylph", name = "Wind Underfoot", hint = "flight" },
 	whorl     = { element = "wind", manifest = "whirlwind", name = "Whorling Wind", hint = "whirlwind" },
-	repetition = { manifest = "repeat", name = "Repetition", hint = "repeats" },
+	repetition = { manifest = "repeat", name = "Repetition", hint = "the seal again, once per sigil" },
 	guidance  = { manifest = "beacon", name = "Guidance", hint = "beacon" },
 	calling   = { manifest = "lure", name = "Calling", hint = "lure" },
 	purification = { element = "water", behavior = "purify", name = "Purification", hint = "clean water" },
-	sword     = { manifest = "blade", name = "Sword", hint = "blade" },
+	sword     = { manifest = "blade", name = "Sword", hint = "elemental blade; Column to thrust, Spiraling Wind to spin" },
 	bridging  = { manifest = "bridge", name = "Bridging", hint = "bridge" },
 	undulation = { manifest = "wave", name = "Undulation", hint = "wave" },
 	obliviation = { manifest = "oblivion", name = "Obliviation", hint = "forbidden", forbidden = true },
 	concealment = { manifest = "shadow", name = "Concealment", hint = "invisibility" },
 	billow    = { manifest = "cloud", name = "Billow", hint = "cloud" },
-	selection = { manifest = "book", name = "Selection", hint = "on oneself" },
+	-- no way of manifesting of its own: the flying book is the Seal of Expansion and Levitation's drawing alone
+	-- (grimoire.lua). Drawn, the sigil turns its seal on the witch herself - a field round her, whatever the signs vote.
+	selection = { self = true, name = "Selection", hint = "on oneself" },
 	-- decorative sigils (Decorative Sigils): the spell takes the creature's shape and moves like it
-	dragon = { shape = "dragon", name = "Dragon", hint = "sculpture" },
-	horse  = { shape = "horse",  name = "Horse",  hint = "sculpture" },
-	bird   = { shape = "bird",   name = "Bird",   hint = "sculpture" },
-	fish   = { shape = "fish",   name = "Fish",   hint = "sculpture" },
-	owlcat = { shape = "owlcat", name = "Owlcat", hint = "sculpture" },
-	leech  = { shape = "leech",  name = "Valance Leech", hint = "sculpture" },
-	scalewolf = { shape = "scalewolf", name = "Scalewolf", hint = "sculpture" },
-	torchstag = { shape = "torchstag", name = "Torchstag", hint = "sculpture" },
-	liongoat = { shape = "liongoat", name = "Liongoat", hint = "sculpture" },
-	frillram = { shape = "frillram", name = "Frillram", hint = "sculpture" },
+	dragon = { shape = "dragon", name = "Dragon", hint = "winds through the air" },
+	horse  = { shape = "horse",  name = "Horse",  hint = "gallops over the ground" },
+	bird   = { shape = "bird",   name = "Bird",   hint = "circles in light, otherwise swoops at prey" },
+	fish   = { shape = "fish",   name = "Fish",   hint = "swims through the air in a school" },
+	owlcat = { shape = "owlcat", name = "Owlcat", hint = "flies beside the caster" },
+	leech  = { shape = "leech",  name = "Valance Leech", hint = "glows in light, otherwise latches on" },
+	scalewolf = { shape = "scalewolf", name = "Scalewolf", hint = "sprints along the ground" },
+	torchstag = { shape = "torchstag", name = "Torchstag", hint = "gallops with antlers held high" },
+	liongoat = { shape = "liongoat", name = "Liongoat", hint = "charges with a heavy stride" },
+	frillram = { shape = "frillram", name = "Frillram", hint = "leaps across the ground" },
 }
 -- every center symbol, in the order the recognizer and the legend take them
 DICTIONARY_CENTER_ORDER = { "fire", "water", "wind", "earth", "light", "crystal", "smoke", "lightning", "flicker", "aeriforms", "sand",
@@ -266,7 +269,7 @@ MANIFEST_NAMES = {
 	wallward = "hollow in the wall", ice_road = "icy road", sylph = "flight", pegasus = "long flight",
 	skysoar = "wind dash", levitate = "levitation", book = "flying book", chair = "walking chair", gale = "steady wind",
 	wind_wall = "wind wall", whirlwind = "whirlwind", bubble = "air bubble", umbrella = "rain dome",
-	guidance_items = "draws items in", ["repeat"] = "repeats a seal", capture = "capture ribbon", lockwax = "lockwax",
+	guidance_items = "draws items in", ["repeat"] = "the seal again", capture = "capture ribbon", lockwax = "lockwax",
 	cookpot = "flask out of time", washbarrel = "water whirl", makeover = "sparkle",
 	reduction = "shrinks", counterclock = "time runs back", counterclock_creatures = "time runs back for creatures", time_stop = "time stop",
 	warmth_zone = "steady warmth", disguise = "beast's guise", scry = "far sight", shadow = "shadow", smoke_cloak = "cloak of smoke",
@@ -348,23 +351,49 @@ DICTIONARY_BEHAVIORS = {
 DICTIONARY_BEHAVIOR = {}
 for _, b in ipairs( DICTIONARY_BEHAVIORS ) do DICTIONARY_BEHAVIOR[b.key] = b end
 
+-- Used by both the cast and the book so a seal with several motion signs shows its actual stroke.
+function dictionary_blade_stroke( behaviors )
+	local b = behaviors or {}
+	local turn = ( b.whirl or 0 ) + ( b.spin or 0 )
+	if math.abs( turn ) > 0.01 then return "spin", turn < 0 and -1 or 1 end
+	return ( b.thrust or 0 ) > 0 and "thrust" or "sweep", 1
+end
+
+function dictionary_blade_bolts( weight )
+	return weight and math.min( 3, math.max( 1, math.floor( weight ) ) ) or nil
+end
+
+function dictionary_blade_element( spell )
+	local element = spell.element
+	if not DICTIONARY_ELEMENTS[element] or element == "shockwave" then return "water" end
+	-- A sword without an element sigil reads as light. Raincleaver carries its water in the small seals.
+	local sub = ( spell.subs or {} )[1]
+	if element == "light" and sub and DICTIONARY_ELEMENTS[sub.element] then return sub.element end
+	return element
+end
+
 -- Signs round a seal that manifests in a way of its own (a special sigil, a frame, a decorative sigil, a wiki's seal;
 -- manifest.lua): what each way takes from them - Expansion and its inverse its size, Stability and Stillness how long
 -- it lasts, Piercing how many there are, Strengthening how hard it strikes, Mimicry that it follows the cursor. The
 -- other signs do nothing there and are left out of the spell; a way not listed takes none. Keys: the way of
 -- manifesting, or the decorative sigil's shape. tests/test_sign_effects.py checks it against manifest.lua.
 local MANIFEST_SIGN_GROUPS = {
-	{ "grow,shrink,still,pierce,strong,mimic", "fish" },
-	{ "grow,shrink,still,pierce,strong", "frillram,horse,leech,liongoat,scalewolf,torchstag" },
+	{ "grow,shrink,still,pierce,strong,mimic", "bird,fish,frillram,horse,liongoat,scalewolf,torchstag" },
+	{ "grow,shrink,still,pierce,strong", "leech,owlcat" },
 	{ "grow,shrink,still,strong,mimic", "dragon,dragon_steam,dragon_water" },
 	{ "grow,shrink,still,mimic", "beastward,beastward_strong,gale,labyrinth,mist,oblivion,petrify,puppet,reduction,"
 		.. "snowfend,time_stop,warmth_zone,whirlpool" },
-	{ "grow,shrink,still,pierce", "bird,owlcat" },
+	{ "grow,shrink,still,strong,mimic", "light_bird" },
 	{ "grow,shrink,still,strong", "flame_shot,pyreball,water_pour" },
 	{ "grow,shrink,mimic", "boil,counterclock_creatures,dry,guidance_items,integration,purify,unpolymorph,wallward,"
 		.. "wash_spring" },
-	{ "grow,shrink,still", "bridge,ice_road,light_beam,light_bird,light_leech,water_cage,water_rose,wind_wall" },
-	{ "grow,shrink,strong", "blade,flame_burst,ring_of_fire,spiraling_flame" },
+	{ "grow,shrink,still", "bridge,ice_road,light_beam,light_leech,water_cage,water_rose,wind_wall" },
+	-- The Sword takes the signs of motion as no other way does (manifest.lua M.blade): a Column stabs the blade
+	-- straight ahead, the Spiraling Wind or signs turned sideways whirl it once round the caster, and a seal with
+	-- neither cuts a wide arc through the aim - whichever way it moves, Expansion and its inverse set its length
+	-- and Strengthening its cut.
+	{ "grow,shrink,strong,thrust,point,whirl,spin,pull,push,reflect,bind,pierce", "blade" },
+	{ "grow,shrink,strong", "flame_burst,ring_of_fire,spiraling_flame" },
 	{ "grow,shrink", "wave" },
 	{ "still,mimic", "forbidden_fire,smoke_copies,whirlwind" },
 	{ "grow,shrink,still,pierce", "carousel" },
@@ -373,7 +402,11 @@ local MANIFEST_SIGN_GROUPS = {
 	{ "strong,mimic", "vapor" },
 	{ "mimic", "chalice,guidance_fish,slime,wolf_curse" },
 	{ "grow,shrink,still", "floatglow,lamp" },
-	{ "still", "beacon,beacon_pillar,bloom,book,bubble,capture,chair,cloud,cookpot,disc,disguise,glowpath,"
+	-- the Billow's cloud feeds on the signs round it: Expansion heaps up more billows, Collection gathers it bigger
+	-- still and its inverse blows it apart, Binding holds whoever climbs onto it, the Spiraling Wind spins its
+	-- streams round, Aeriforms blow it away
+	{ "grow,shrink,still,strong,mimic,gather,scatter,hold,whirl,gust", "cloud" },
+	{ "still", "beacon,beacon_pillar,bloom,book,bubble,capture,chair,cookpot,disc,disguise,glowpath,"
 		.. "levitate,lift,lockwax,lure,mirror,pegasus,phantasm,portal,portal_small,remote_cloak,ribbon,"
 		.. "sand_cage,sand_cloud,sandcastle,shade,shadow,smoke_cloak,smoke_clone,smoke_fairy,stone_arm,sylph,"
 		.. "tracer,tracking,umbrella,walk_liquid,wand,warmth,xray" },
@@ -384,6 +417,14 @@ for _, group in ipairs( MANIFEST_SIGN_GROUPS ) do
 		DICTIONARY_MANIFEST_SIGNS[key] = {}
 		for sign in group[1]:gmatch( "%w+" ) do DICTIONARY_MANIFEST_SIGNS[key][sign] = true end
 	end
+end
+
+-- A sculpture carries Reflection with it, including the named forms of the dragon, bird and leech.
+for key, sigil in pairs( DICTIONARY_SIGILS ) do
+	if sigil.shape then DICTIONARY_MANIFEST_SIGNS[key].reflect = true end
+end
+for _, key in ipairs( { "dragon_water", "dragon_steam", "light_bird", "light_leech" } ) do
+	DICTIONARY_MANIFEST_SIGNS[key].reflect = true
 end
 
 -- Does the behavior work on the carrier, or (given) on that way of manifesting of its own?

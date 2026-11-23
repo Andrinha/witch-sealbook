@@ -60,6 +60,12 @@ end
 local function mine( ctx, t )
 	t.owner = ctx.shooter
 	t.power = ctx.power * ( 1 + 0.3 * math.min( 2, mod( ctx, "strong" ) ) )
+	-- The moving sculpture draws the signs alongside its element. Keep only signs actually drawn.
+	if t.shape and DICTIONARY_MANIFEST_SIGNS[t.shape] then
+		for sign, weight in pairs( ctx.spell.behaviors or {} ) do
+			if DICTIONARY_MANIFEST_SIGNS[t.shape][sign] and sign ~= "mimic" and t[sign] == nil then t[sign] = weight end
+		end
+	end
 	if mod( ctx, "mimic" ) > 0 then t.mimic = 1 end
 	-- drawn with golden ink: the magic shines (effect_spawn gives it a light)
 	if ( ctx.glow or 0 ) > 0 then t.glow = ctx.glow end
@@ -212,6 +218,10 @@ local function light_source( ctx, mode, x, y, params )
 			and ( p.ancient or 0 ) == ( params.ancient or 0 ) and ( p.lantern or 0 ) == ( params.lantern or 0 )
 			and p.element == params.element then
 			renew_light( e, params.frames )
+			if mode == "leech" then
+				effect_set( e, "big", params.big )
+				if params.reflect or p.reflect then effect_set( e, "reflect", params.reflect or 0 ) end
+			end
 			if params.dy then
 				effect_set( e, "dx", params.dx )
 				effect_set( e, "dy", params.dy )
@@ -253,7 +263,8 @@ M.beacon_pillar = function( ctx )
 end
 M.light_leech = function( ctx )
 	local x, y = reach( ctx, 140 )
-	return light_source( ctx, "leech", x, y, { frames = secs( ctx, 20 ), big = size( ctx, 1 ) } )
+	return light_source( ctx, "leech", x, y, { frames = secs( ctx, 20 ), big = size( ctx, 1 ),
+		reflect = ( ctx.spell.behaviors or {} ).reflect } )
 end
 M.light_bird = function( ctx )
 	return { spawn( "mover", "sculpture", ctx.x, ctx.y - 8, mine( ctx,
@@ -432,12 +443,27 @@ M.shockwave = function( ctx )
 		grow = 14, damage = 0.08, push = 160, push_objects = 16 } ) ) }
 end
 -- The Sigil of the Sword: a blade of the seal's element. Raincleaver's sword has no element sigil beside it - its water is
--- in the small seals round it, and the blade is of theirs (it used to cut with light, the element a seal of no sigil has)
+-- in the small seals round it, and the blade is of theirs (it used to cut with light, the element a seal of no sigil has).
+-- The signs round the seal say how the blade moves (effects/nova.lua MODES.slash): the Spiraling Wind, or signs turned
+-- sideways, whirl it once round the caster the way they turn; columns stab it straight ahead; a seal with neither cuts a
+-- wide arc through the aim. Expansion and its inverse set its length, Strengthening its cut.
+local BLADE_STROKE = { sweep = 0.2, thrust = 0.25, spin = 0.3 }
 M.blade = function( ctx )
-	local element = el( ctx, "water" )
-	local sub = ( ctx.spell.subs or {} )[1]
-	if element == "light" and sub and DICTIONARY_ELEMENTS[sub.element or ""] then element = sub.element end
-	return { spawn( "nova", "slash", ctx.x, ctx.y - 2, mine( ctx, { element = element, r = size( ctx, 28 ), dx = ctx.aim_x, dy = ctx.aim_y } ) ) }
+	local element = dictionary_blade_element( ctx.spell )
+	local b = ctx.spell.behaviors or {}
+	local style, turn = dictionary_blade_stroke( b )
+	local radius = size( ctx, 28 ) * ( 1 + 0.18 * math.min( 3, b.point or 0 ) )
+	local knock = 120 + ( ( DICTIONARY_LOOKS[element] or {} ).knockback or 0 )
+	if element == "vacuum" then knock = -knock end
+	if b.pull then knock = -( math.abs( knock ) + 45 * math.min( 3, b.pull ) )
+	elseif b.push then knock = math.abs( knock ) + 60 * math.min( 3, b.push ) end
+	local ox, oy = EntityGetTransform( ctx.shooter )
+	return { spawn( "nova", "slash", ctx.x, ctx.y, mine( ctx, { element = element, r = radius,
+		dx = ctx.aim_x, dy = ctx.aim_y, style = style, turn = turn,
+		ox = ctx.x - ox, oy = ctx.y - oy, knock = knock, reflect = b.reflect,
+		volley = dictionary_blade_bolts( b.pierce ),
+		bind = b.bind and SIGN_AMOUNTS.bind( math.min( b.bind, 3 ) ).frames or nil,
+		frames = secs( ctx, BLADE_STROKE[style] ), force = ctx.spell.force or 0 } ) ) }
 end
 
 ---- sculptures ----
@@ -468,6 +494,7 @@ local function sculpture( ctx, shape, element, big, seconds )
 		end
 		out[#out + 1] = spawn( "mover", "sculpture", sx + ( i - 1 ) * 3, sy - ( i - 1 ) * 4, mine( ctx, {
 			shape = shape, element = element, frames = secs( ctx, seconds or SCULPT_SECONDS[shape] or 10 ) + ( i - 1 ) * 20,
+			phase = count > 1 and ( shape == "bird" or shape == "fish" or shape == "owlcat" ) and ( i - 1 ) * 2 * math.pi / count or nil,
 			tx = tx + ( i - 1 ) * 8, ty = ty, dx = ctx.aim_x, vx = ctx.aim_x * 120 + ( i - 1 ) * 10, vy = ctx.aim_y * 120 - ( i - 1 ) * 20,
 			big = big or size( ctx, 1 ), speed = 1 + 0.2 * ( ctx.spell.range or 0 ),
 			reveal = element == "light" and 1 or 0,
@@ -597,11 +624,46 @@ M.ribbon = function( ctx )
 	local x, y = reach( ctx, 160 )
 	return { spawn( "build", "ribbon", ctx.x, ctx.y, mine( ctx, { frames = secs( ctx, 30 ), tx = x, ty = y, element = el( ctx, "earth" ) } ) ) }
 end
+-- The Billow's cloud takes a temper from the element drawn round it (MODES.cloud): fire embers that scorch what is
+-- beneath, water a rain that puts out fire, crystal and frost snow that freezes the water around it, lightning a
+-- storm that strikes down at what comes under it, light a lamp of a cloud, smoke wisps, wind blowing through,
+-- flicker fireworks. Sand heaps up a cloud of sand; the rest of the elements leave it a plain white cloud.
+local CLOUD_TEMPERS = {
+	fire = "ember", plasma = "ember", lava = "ember", sunfire = "ember",
+	water = "rain", storm = "rain", mud = "rain", shimmer = "rain", steam = "rain",
+	crystal = "snow", frost = "snow", ice = "snow",
+	thunder = "storm", ball_lightning = "storm",
+	light = "glow", beam = "glow", flicker = "sparkle", fireworks = "sparkle",
+	smoke = "wisp", smog = "wisp", phantasm = "wisp",
+	wind = "wind", air = "wind", firestorm = "wind", vacuum = "wind",
+}
+-- the cloud's body by temper: each element's cloud is its own object (make_gfx.py) - a dark ember cloud that
+-- crumbles into real fire, a grey rain cloud into water, a slippery cloud of ice, a dark storm cloud shedding
+-- sparks, a shining one of solid light; sand heaps up a cloud of sand, and plain air a soft white cloud of snow
+local CLOUD_PIECES = { sand = "sand_cloud", ember = "ember_cloud", rain = "rain_cloud", snow = "frost_cloud",
+	storm = "storm_cloud", glow = "glow_cloud" }
+-- Billow: a fluffy cloud at the cursor to stand on (MODES.cloud). What is drawn round the sigil shapes it: the
+-- element's sigil gives the cloud its temper, Expansion heaps up more billows round its middle, Collection gathers
+-- it bigger still, puff by puff, its inverse blows it apart, Binding holds whoever climbs onto it, the Spiraling
+-- Wind spins its streams round, Aeriforms blow it away, Mimicry makes it flow after the cursor.
 M.cloud = function( ctx )
 	local x, y = reach( ctx, 150 )
-	local element = el( ctx, "sand" )
-	local piece = ( element == "sand" or element == "earth" or element == "sandstorm" ) and "sand_cloud" or "cloud"
-	return { spawn( "build", "cloud", x, y, mine( ctx, { frames = secs( ctx, 30 ), piece = piece } ) ) }
+	-- a seal with no element of its own: a plain white cloud (the Aeriforms' air still blows through it)
+	local bare = el( ctx, "" ) == ""
+	local element = bare and "air" or ctx.spell.element
+	local sandy = element == "sand" or element == "earth" or element == "sandstorm" or element == "mud"
+	local temper = bare and "plain" or ( sandy and "sand" or ( CLOUD_TEMPERS[element] or "plain" ) )
+	local piece = CLOUD_PIECES[temper] or "cloud"
+	return { spawn( "build", "cloud", x, y, mine( ctx, {
+		frames = secs( ctx, 30 ), piece = piece, element = element, temper = temper,
+		grow = grown( ctx ),
+		gather = math.min( 2, mod( ctx, "gather" ) ),
+		scatter = math.min( 2, mod( ctx, "scatter" ) ),
+		hold = math.min( 2, mod( ctx, "hold" ) ),
+		whirl = mod( ctx, "whirl" ) > 0 and 1 or 0,
+		gust = math.min( 2, mod( ctx, "gust" ) ),
+		strong = math.min( 2, mod( ctx, "strong" ) ),
+	} ) ) }
 end
 M.sand_cloud = function( ctx )
 	local x, y = reach( ctx, 150 )
@@ -657,12 +719,17 @@ end
 
 ---- time, the mind, space ----
 
+-- The Repetition's seal: the seal casts its own magic once (cast.lua), and the sigil brings it again, as many
+-- times as it is drawn (seal_spell.lua spell.repeats), each time from where the caster is and aims at that moment.
+-- The seal again without its own Repetition: with it, each coming would come again as many times more, without end
+-- (a Workshop player's game froze, 2026-10). A Repetition in a small seal inside the seal or linked to it works the
+-- same way on its own small seal, never on the seal around it.
 M["repeat"] = function( ctx )
-	if GlobalsGetValue( LAST_SPELL_VAR or "witch_notebook.last_cast", "" ) == "" then
-		GamePrint( "Nothing to repeat - cast another seal first" )
-		return {}
-	end
-	return { spawn( "repeat", "cast", ctx.x, ctx.y, mine( ctx, { times = 3 } ) ) }
+	local times = math.max( 1, math.floor( ctx.spell.repeats or 1 ) )
+	local again = {}
+	for k, v in pairs( ctx.spell ) do again[k] = v end
+	again.manifest, again.repeats = nil, nil
+	return { spawn( "repeat", "cast", ctx.x, ctx.y, mine( ctx, { times = times, spell_data = spell_data( again ) } ) ) }
 end
 M.capture = function( ctx )
 	local id, x, y = victim( ctx, 60 )

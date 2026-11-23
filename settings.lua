@@ -110,6 +110,13 @@ mod_settings = {
 		scope = MOD_SETTING_SCOPE_RUNTIME,
 	},
 	{
+		id = "mark_selects_ink",
+		ui_name = "Take up the pen after marking",
+		ui_description = "After lines are named with Mark, an ink is chosen again, ready to draw.\nTurn off to stay in Mark and go on naming lines.",
+		value_default = false,
+		scope = MOD_SETTING_SCOPE_RUNTIME,
+	},
+	{
 		id = "grimoire_remembers",
 		ui_name = "Grimoire remembers past runs",
 		ui_description = "The seals learned in earlier runs stay in the grimoire, to study and redraw.\nTo cast one, it still has to be drawn on a page or found on a sheet again.",

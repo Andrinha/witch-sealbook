@@ -14,15 +14,27 @@ local FIRE_LOOP = [[
 		event_name="player_projectiles/torch/loop" auto_play="1" />
 ]]
 
-local function fire_audio( content, element, projectile )
-	if element ~= "fire" then return content end
-	local audio = FIRE_LOOP
+-- each element's shot speaks with the game's own voice for its kind; elements not listed use the game's plain magic bolt
+local SHOT_ROOTS = {
+	fire = "player_projectiles/bullet_fire_heavy", plasma = "player_projectiles/bullet_laser",
+	lava = "player_projectiles/bullet_fire_heavy", sunfire = "player_projectiles/bullet_fire_heavy", firestorm = "player_projectiles/bullet_fire_heavy",
+	ice = "projectiles/icethrower", crystal = "projectiles/icethrower", frost = "projectiles/icethrower",
+	stone = "player_projectiles/crumbling_earth", earth = "player_projectiles/crumbling_earth",
+	thunder = "player_projectiles/bullet_lightning", ball_lightning = "player_projectiles/bullet_lightning",
+	wind = "player_projectiles/bullet_burst_of_air", air = "player_projectiles/bullet_burst_of_air",
+	smoke = "player_projectiles/mist", smog = "player_projectiles/mist", phantasm = "player_projectiles/mist",
+}
+local SHOT_DEFAULT = "player_projectiles/bullet_light"
+
+local function shot_audio( content, element, projectile )
+	local audio = element == "fire" and FIRE_LOOP or ""
 	if projectile then
 		audio = audio .. [[
 	<AudioComponent file="data/audio/Desktop/projectiles.bank"
-		event_root="player_projectiles/bullet_fire_heavy" />
+		event_root="]] .. ( SHOT_ROOTS[element] or SHOT_DEFAULT ) .. [[" />
 ]]
 	end
+	if audio == "" then return content end
 	return ( content:gsub( "</Entity>%s*$", audio .. "</Entity>" ) )
 end
 
@@ -101,12 +113,12 @@ function carriers_create()
 		make_sprite( bolt_sprite, 5, color )
 		make_sprite( orb_sprite, 9, color )
 
-		ModTextFileSetContent( carrier_file( key, "bolt" ), fire_audio( fill( bolt, copy( common, {
+		ModTextFileSetContent( carrier_file( key, "bolt" ), shot_audio( fill( bolt, copy( common, {
 			lifetime = BASE.bolt_lifetime, die_on_low_velocity = 1, sprite = bolt_sprite, sprite_offset = 2,
 			trail_count = 1, trail_interval = 3, light_radius = 40,
 		} ) ), key, true ) )
 		-- the orb: bigger and brighter, lingers and sheds more of its material; cast.lua slows it down
-		ModTextFileSetContent( carrier_file( key, "orb" ), fire_audio( fill( bolt, copy( common, {
+		ModTextFileSetContent( carrier_file( key, "orb" ), shot_audio( fill( bolt, copy( common, {
 			lifetime = BASE.orb_lifetime, die_on_low_velocity = 0, sprite = orb_sprite, sprite_offset = 4,
 			trail_count = 3, trail_interval = 1, light_radius = 70,
 		} ) ), key, true ) )
@@ -115,13 +127,13 @@ function carriers_create()
 		for kind, amount in pairs( look.damage or {} ) do
 			drop_damage[#drop_damage + 1] = kind .. '="' .. amount * BASE.splash_damage .. '"'
 		end
-		ModTextFileSetContent( carrier_file( key, "splash" ), fire_audio( fill( bolt, copy( common, {
+		ModTextFileSetContent( carrier_file( key, "splash" ), shot_audio( fill( bolt, copy( common, {
 			damage_by_type = table.concat( drop_damage, " " ), explosion_damage = common.explosion_damage * BASE.splash_damage,
 			radius = math.floor( common.radius / 2 ), lifetime = BASE.splash_lifetime, die_on_low_velocity = 1, sprite = bolt_sprite,
 			sprite_offset = 2, trail_count = 2, trail_interval = 1, light_radius = 30,
-		} ) ), key, false ) )
+		} ) ), key, true ) )
 		-- the field: its script (behaviors/field.lua) puts its matter on its circle every other frame
-		ModTextFileSetContent( carrier_file( key, "field" ), fire_audio( fill( field, copy( common, {
+		ModTextFileSetContent( carrier_file( key, "field" ), shot_audio( fill( field, copy( common, {
 			field_radius = BASE.field_radius, field_lifetime = BASE.field_lifetime, field_interval = 2,
 			field_damage = main_amount * BASE.field_damage, field_every = BASE.field_every,
 			field_damage_type = DAMAGE_TYPES[main_type] or "DAMAGE_PROJECTILE",
@@ -130,7 +142,7 @@ function carriers_create()
 		if look.material then
 			-- the game's rain cloud, raining the element's material
 			local content = cloud:gsub( 'emitted_material_name="water"', 'emitted_material_name="' .. look.material .. '"', 1 )
-			ModTextFileSetContent( carrier_file( key, "cloud" ), fire_audio( content, key, false ) )
+			ModTextFileSetContent( carrier_file( key, "cloud" ), shot_audio( content, key, false ) )
 		end
 	end
 end

@@ -271,6 +271,37 @@ local function special_pages( item, sigils, frame, elements )
 				t, spell, v.name, alone )
 		end
 	end
+	if base.manifest == "blade" then
+		-- Sword also reads the placement of directional signs. The signs section above starts from a bare ring.
+		for _, example in ipairs( {
+			{ sigil = "crystal", key = "column", name = "Crystal with Columns" },
+			{ sigil = "lightning", key = "turned_columns", name = "Lightning with turned Columns", turn = SPIN_TURN },
+		} ) do
+			local t = seal_tree( { "sword", example.sigil }, FORM_BY_NAME.Column, false, { turn = example.turn } )
+			add_page( item, part, item.key .. "/" .. example.key, t, compile( t ), example.name, alone )
+		end
+	end
+	-- the Selection's sigil is known from one seal alone (the wiki's Signs Explained): the flying book its page's
+	-- recipe makes - no seal of the sigil's own does (seal_spell.lua). Its signs laid round the ring, as many as
+	-- the recipe takes: the tree seal_tree can't draw, its pairs being four.
+	local selfdef = sigils[1] and DICTIONARY_SIGILS[sigils[1]] or {}
+	if selfdef.self then
+		local page = new_part( item, "The Seal of Expansion and Levitation" )
+		local symbols = sigil_symbols( sigils, form.sigil or SIGIL_SIZE, {} )
+		local deg = 0
+		for _, s in ipairs( { { "column", 8 }, { "expansion", 4 }, { "stability", 4 } } ) do
+			for _ = 1, s[2] do
+				symbols[#symbols + 1] = sign_symbol( s[1], deg, SIGN_SIZE, SIGN_DIST, false )
+				deg = deg + 22.5
+			end
+		end
+		local t = { ring = { x = 0, y = 0, r = R, roundness = 0 }, symbols = symbols, layers = {}, frames = {},
+			subs = {}, links = {}, glaives = 0 }
+		local spell = compile( t )
+		if spell and spell.named == "expansion_levitation" then
+			add_page( item, page, item.key .. "/expansion_levitation", t, spell, "the wiki's seal", alone )
+		end
+	end
 end
 
 local function build()
@@ -340,7 +371,7 @@ local function build()
 	if spell then add_page( empty, new_part( empty, "Alone" ), "empty", tree, spell, "nothing inside" ) end
 	for _, key in ipairs( DICTIONARY_CENTER_ORDER ) do
 		local def = DICTIONARY_SIGILS[key]
-		if def.manifest and not def.shape then special_pages( item( special, key, def.name ), { key }, nil, elements ) end
+		if ( def.manifest or def.self ) and not def.shape then special_pages( item( special, key, def.name ), { key }, nil, elements ) end
 	end
 	local frames = group( "Frames" )
 	for _, key in ipairs( DICTIONARY_FRAME_ORDER ) do

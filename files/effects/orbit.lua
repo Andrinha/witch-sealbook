@@ -40,6 +40,7 @@ MODES.carousel = function( e, p, age )
 		end,
 		function() end )
 	if owner and age == 0 then
+		effect_sound( "magic", EntityGetTransform( e ) )
 		local c = element == "light" and { 255, 230, 170 } or DICTIONARY_ELEMENTS[element].color
 		EntityAddComponent2( e, "LightComponent", { radius = math.floor( 90 * big ), r = c[1], g = c[2], b = c[3], fade_out_time = 1 } )
 	end
@@ -75,6 +76,7 @@ MODES.ring = function( e, p, age )
 			if look.status and look.status ~= "" then give_effect( id, look.status ) end
 			push_from( id, px, py, 60 )
 		end )
+	if owner and age == 0 then effect_sound( "magic", EntityGetTransform( e ) ) end -- the lights ring in
 	if owner and p.guard == 1 and age >= 20 and age % RESONANCE_AMOUNTS.guardian().every == 0 and ( p.count or 0 ) > 0 then
 		local x, y = EntityGetTransform( e )
 		local reach = RESONANCE_AMOUNTS.guardian().reach

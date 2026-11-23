@@ -106,7 +106,7 @@ local function hint_pages()
 	for _, key in ipairs( DICTIONARY_CENTER_ORDER ) do
 		local def = DICTIONARY_SIGILS[key]
 		if def.shape then sculptures[#sculptures + 1] = sigil_row( key )
-		elseif def.manifest or def.behavior then specials[#specials + 1] = sigil_row( key )
+		elseif def.manifest or def.behavior or def.self then specials[#specials + 1] = sigil_row( key )
 		else elements[#elements + 1] = sigil_row( key ) end
 	end
 	local basic, more = {}, {}

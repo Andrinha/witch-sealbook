@@ -556,7 +556,7 @@ local SPECIAL_SIGIL = 0.03
 local function shape_entries( list, key, limits, first_limits )
 	local out = {}
 	local def = DICTIONARY_SIGILS[key]
-	local prior = def and ( def.manifest or def.shape or def.behavior ) and SPECIAL_SIGIL or 0
+	local prior = def and ( def.manifest or def.shape or def.behavior or def.self ) and SPECIAL_SIGIL or 0
 	for i, shape in ipairs( list ) do
 		local penalty = prior + ( i > 1 and VARIANT_PENALTY[key] or 0 )
 		out[#out + 1] = { key = key, shape = shape, strokes = ( i > 1 and limits ) or first_limits, penalty = penalty > 0 and penalty or nil }

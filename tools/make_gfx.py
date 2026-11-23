@@ -28,7 +28,13 @@ LOOKS = {
     "ice": dict(color=(170, 220, 245), grain=14, alpha=215, top=(235, 250, 255), crack=(120, 180, 220), material="ice_glass_b2", crumble="snow"),
     "crystal": dict(color=(190, 170, 255), grain=10, alpha=200, top=(255, 255, 255), crack=(140, 120, 230), material="glass_box2d", crumble="glass_broken", rainbow=True),
     "water": dict(color=(70, 140, 235), grain=12, alpha=170, top=(170, 215, 255), crack=(50, 110, 210), material="ice_glass_b2", crumble="water"),
-    "cloud": dict(color=(236, 240, 246), grain=8, alpha=235, top=(255, 255, 255), crack=(205, 212, 225), material="rock_box2d", crumble="snow"),
+    "cloud": dict(color=(236, 240, 246), grain=8, alpha=235, top=(255, 255, 255), crack=(205, 212, 225), material="snow_b2", crumble="snow"),
+    # the tempers the elements give the Billow's cloud (effects/build.lua MODES.cloud): a fire cloud of embers that
+    # crumbles into real fire, a grey rain cloud that comes apart into water, a dark storm cloud shedding sparks.
+    # Frost and light reuse the ice and light looks: a slippery cloud of ice, a shining one of solid light.
+    "ember": dict(color=(128, 66, 48), grain=14, alpha=245, top=(255, 172, 82), crack=(86, 42, 30), material="rock_box2d", crumble="fire"),
+    "raincloud": dict(color=(122, 140, 168), grain=10, alpha=235, top=(202, 216, 234), crack=(92, 107, 132), material="rock_box2d", crumble="water"),
+    "stormcloud": dict(color=(84, 78, 104), grain=10, alpha=245, top=(152, 142, 186), crack=(60, 55, 80), material="rock_box2d", crumble="spark_yellow"),
     "light": dict(color=(255, 236, 150), grain=10, alpha=200, top=(255, 255, 230), crack=(240, 200, 100), material="glass_box2d", crumble="spark_yellow"),
 }
 
@@ -47,11 +53,23 @@ PIECES = {
     "cloud": ("cloud", "cloud", 36, 13), "sand_cloud": ("sand", "cloud", 36, 13),
     # the Serpent's Bed of Sand: the billows its cloud is heaped up from, in three sizes
     "sand_puff_l": ("sand", "puff", 18, 13), "sand_puff_m": ("sand", "puff", 14, 11), "sand_puff_s": ("sand", "puff", 9, 8),
+    # the Billow's own heap: the puffs its cloud grows by as it gathers, white as the cloud itself
+    "cloud_puff_l": ("cloud", "puff", 18, 13), "cloud_puff_m": ("cloud", "puff", 14, 11), "cloud_puff_s": ("cloud", "puff", 9, 8),
+    # the temper bodies: what the element's cloud is made of, each with its puffs to heap up in its own look
+    "ember_cloud": ("ember", "cloud", 36, 13), "ember_puff_l": ("ember", "puff", 18, 13), "ember_puff_m": ("ember", "puff", 14, 11), "ember_puff_s": ("ember", "puff", 9, 8),
+    "rain_cloud": ("raincloud", "cloud", 36, 13), "rain_puff_l": ("raincloud", "puff", 18, 13), "rain_puff_m": ("raincloud", "puff", 14, 11), "rain_puff_s": ("raincloud", "puff", 9, 8),
+    "frost_cloud": ("ice", "cloud", 36, 13), "frost_puff_l": ("ice", "puff", 18, 13), "frost_puff_m": ("ice", "puff", 14, 11), "frost_puff_s": ("ice", "puff", 9, 8),
+    "storm_cloud": ("stormcloud", "cloud", 36, 13), "storm_puff_l": ("stormcloud", "puff", 18, 13), "storm_puff_m": ("stormcloud", "puff", 14, 11), "storm_puff_s": ("stormcloud", "puff", 9, 8),
+    "glow_cloud": ("light", "cloud", 36, 13), "glow_puff_l": ("light", "puff", 18, 13), "glow_puff_m": ("light", "puff", 14, 11), "glow_puff_s": ("light", "puff", 9, 8),
     "sand_flower": ("sand", "flower", 15, 15), "sand_castle": ("sand", "castle", 48, 36),
     "stone_hand": ("stone", "hand", 13, 11),
 }
 
-LATER_PIECES = {"stone_brick", "stone_brick_half", "sand_panel", "sand_puff_l", "sand_puff_m", "sand_puff_s"}  # see main(): seeded by name
+LATER_PIECES = {"stone_brick", "stone_brick_half", "sand_panel", "sand_puff_l", "sand_puff_m", "sand_puff_s",
+                "cloud_puff_l", "cloud_puff_m", "cloud_puff_s", "ember_cloud", "ember_puff_l", "ember_puff_m", "ember_puff_s",
+                "rain_cloud", "rain_puff_l", "rain_puff_m", "rain_puff_s", "frost_cloud", "frost_puff_l", "frost_puff_m",
+                "frost_puff_s", "storm_cloud", "storm_puff_l", "storm_puff_m", "storm_puff_s",
+                "glow_cloud", "glow_puff_l", "glow_puff_m", "glow_puff_s"}  # see main(): seeded by name
 
 
 def noise(rng, look, x, y, w, h):
@@ -203,10 +221,10 @@ def draw_piece(kind, look_key, shape, w, h, seed):
             col = look["crack"] + (look["alpha"],)  # the joint between bricks
         if shape == "puff":
             # a soft billow: no cracks; a bright crown two pixels deep, its underside in shadow, so that the billows
-            # read as heaped up and not as one flat mass
+            # read as heaped up and not as one flat mass (the crown warm on sand, bright on a white cloud)
             base = noise(rng, look, x, y, w, h)
             if (x, y - 1) not in pts:
-                col = (255, 238, 190, look["alpha"])
+                col = ((255, 238, 190) if look_key == "sand" else look["top"]) + (look["alpha"],)
             elif (x, y - 2) not in pts:
                 col = look["top"] + (look["alpha"],)
             elif (x, y + 1) not in pts:

@@ -138,9 +138,19 @@ local function where( at ) return ( at == "hand" or at == "sky" or at == "front"
 -- what appears and where, in a few words
 local function heading( spell, how )
 	local element = name_of( spell.element )
-	if spell.shape then return "A sculpture: " .. DICTIONARY_SIGILS[spell.shape].name:lower() .. " of " .. element .. ", at the cursor" end
+	if spell.shape then
+		local animal = DICTIONARY_SIGILS[spell.shape]
+		return animal.name .. " of " .. element .. " (" .. animal.hint .. ")"
+	end
 	if spell.manifest then
-		return ( MANIFEST_NAMES[spell.manifest] or spell.manifest ):gsub( "^%l", string.upper ) .. " (element: " .. element .. ")"
+		local text = ( MANIFEST_NAMES[spell.manifest] or spell.manifest ):gsub( "^%l", string.upper )
+		if spell.manifest == "blade" then
+			text = text .. " " .. dictionary_blade_stroke( spell.behaviors )
+			element = name_of( dictionary_blade_element( spell ) )
+		end
+		-- the Repetition's seal comes as many times as its sigil is drawn
+		if spell.manifest == "repeat" then text = text .. " x" .. math.max( 1, math.floor( spell.repeats or 1 ) ) end
+		return text .. " (element: " .. element .. ")"
 	end
 	if spell.element == "shockwave" then return "A shockwave from the seal: it pushes creatures away, harms nothing" end
 	local carrier, at = how.carrier, how.at
@@ -167,6 +177,15 @@ end
 
 -- what it does to whom it hits and leaves behind (the ring of lights only strikes, its matter is for show)
 local function touch( spell, how )
+	if spell.manifest == "blade" then
+		local element = dictionary_blade_element( spell )
+		local look = DICTIONARY_LOOKS[element] or {}
+		local status = status_word( look.status )
+		local text = "Cuts each creature once as the edge passes" .. ( status and ( ", " .. status ) or "" )
+		if element == "water" or element == "storm" then return text .. ". The tip parts liquid." end
+		if ( RESONANCE_NATURES[element] or {} ).cold then return text .. ". The tip freezes water." end
+		return text
+	end
 	local look = DICTIONARY_LOOKS[spell.element]
 	if not look or not how.own or spell.manifest or spell.shape then return nil end
 	if how.carrier == "ring" then return table.concat( { "strikes whom it touches", status_word( look.status ) }, ", " ) end
@@ -193,12 +212,30 @@ end
 
 ---- the signs ----
 
+local BLADE_SIGNS = {
+	thrust = "extends the blade in a straight thrust",
+	point = "lengthens the blade's reach",
+	whirl = "sweeps the blade around the caster",
+	spin = "sweeps the blade around the caster",
+	push = "throws struck creatures away from the blade",
+	pull = "draws struck creatures toward the hilt",
+	reflect = "parries incoming shots at the blade",
+}
+
 -- what a sign does on this carrier, with its amount, and what it needs to show: text, test
 local function sign_text( key, w, spell, how )
 	local a = SIGN_AMOUNTS[key] and SIGN_AMOUNTS[key]( w )
 	local carrier, element = how.carrier, name_of( spell.element )
 	local placed = carrier == "field" or carrier == "nova"
 	local own = spell.manifest or spell.shape
+	if own == "blade" and key == "thrust" and dictionary_blade_stroke( spell.behaviors ) == "spin" then
+		return "the turning signs carry the thrust into a full spin"
+	end
+	if own == "blade" and key == "pierce" then
+		local count = dictionary_blade_bolts( w )
+		return "releases " .. count .. ( count == 1 and " piercing bolt" or " piercing bolts" ) .. " from the tip"
+	end
+	if own == "blade" and BLADE_SIGNS[key] then return BLADE_SIGNS[key] end
 	if own then
 		local ctx = { spell = spell, power = 1.5 }
 		if key == "grow" or key == "shrink" then return ( key == "grow" and "bigger, " or "smaller, " ) .. times( MANIFEST_SCALE.grown( ctx ) ) end
@@ -206,6 +243,7 @@ local function sign_text( key, w, spell, how )
 		if key == "pierce" then return "more of it: +" .. math.min( 4, math.floor( w ) ) end
 		if key == "strong" then return "stronger" end
 		if key == "mimic" then return "follows the cursor", "move the mouse after casting" end
+		if key == "reflect" then return "a halo around the sculpture turns incoming shots back", "cast it into a line of fire" end
 	end
 	if key == "pierce" then
 		if carrier == "ring" then return "more lights" end
@@ -366,14 +404,17 @@ function spell_notes( data, plain )
 		local w = spell.behaviors[b.key]
 		-- the signs a resonance takes for itself, or that only it reads, are told by the resonance
 		if resonance and w and ( resonance.consumed[b.key] or not dictionary_behavior_works( b.key, how.carrier ) ) then w = nil end
-		if w and b.key ~= "thrust" and b.key ~= "float" then
+		if w and ( b.key ~= "thrust" or spell.manifest == "blade" ) and b.key ~= "float" then
 			local text, test = sign_text( b.key, w, spell, how )
-			add( given_by( b.key ) .. ": " .. text, "sign" )
+			local source = b.key == "thrust" and "Column, aligned Regions" or given_by( b.key )
+			add( source .. ": " .. text, "sign" )
 			if test then add( "try: " .. test, "test" ) end
 		end
 	end
 	-- the seals drawn inside it and linked to it are cast with it
-	for _, part in ipairs( { { spell.subs, "Inside it, cast with it: " }, { spell.links, "Linked, cast with it: " } } ) do
+	local parts = spell.named and spell.manifest == "blade" and {}
+		or { { spell.subs, "Inside it, cast with it: " }, { spell.links, "Linked, cast with it: " } }
+	for _, part in ipairs( parts ) do
 		for _, other in ipairs( part[1] or {} ) do
 			local how_other = manifestation( other )
 			if how_other or other.manifest or other.shape then

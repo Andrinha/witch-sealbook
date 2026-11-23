@@ -45,6 +45,7 @@ MODES.snowfend = function( e, p, age, x, y )
 		convert_around( e, SNOWFEND_FROM, SNOWFEND_TO, p.r, 3 )
 		convert_around( e, "water", "steam", p.r * 0.8, 1 )
 		light( e, 255, 180, 110, p.r * 2 )
+		effect_sound( "magic", x, y )
 	end
 	if age % 3 == 0 then edge( x, y, p.r, fx_color( "fire", 0.6, 0.5 ), 20, age * 0.004, true ) end
 	if age % 4 == 0 then fx_dot( x + Random( -p.r, p.r ), y - Random( 0, p.r ), fx_color( "fire", 0.5, 0.7 ), 0, -10, 0.8 ) end
@@ -56,6 +57,7 @@ MODES.warmth_zone = function( e, p, age, x, y )
 	if age == 0 then
 		convert_around( e, MELTS.from, MELTS.to, p.r, 1 )
 		light( e, 255, 170, 100, p.r * 2.5 )
+		effect_fire_loop( e, true )
 	end
 	if age % 3 == 0 then
 		local a = Random( 0, 628 ) / 100
@@ -70,6 +72,7 @@ end
 -- Torrential Flow: water swirls into a whirlpool that spins and drags enemies in
 MODES.whirlpool = function( e, p, age, x, y )
 	if done( e, p, age ) then return end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	local r = p.r
 	for i = 1, 3 do
 		local a = Random( 0, 628 ) / 100
@@ -112,6 +115,7 @@ MODES.time_stop = function( e, p, age, x, y )
 		EntityKill( e )
 		return
 	end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	if age % 10 == 0 then
 		for _, id in ipairs( creatures_in( x, y, r, p.owner ) ) do
 			local held = false
@@ -146,6 +150,7 @@ end
 MODES.dry = function( e, p, age, x, y )
 	if done( e, p, age ) then return end
 	if age == 0 then convert_around( e, "water,water_salt,water_swamp,mud", "steam,steam,steam,sand", p.r, 3 ) end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	for i = 1, 3 do
 		local a = age * 0.2 + Random( 0, 628 ) / 100
 		local rr = Random( 4, math.floor( p.r ) )
@@ -165,6 +170,7 @@ end
 MODES.boil = function( e, p, age, x, y )
 	if done( e, p, age ) then return end
 	if age == 0 then convert_around( e, BOILS.from, BOILS.to, p.r, 5 ) end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	for i = 1, 3 do
 		fx_dot( x + Random( -p.r, p.r ), y + Random( -p.r, p.r ) * 0.5, fx_color( "steam", 0.9, 0.8 ), Random( -5, 5 ), -Random( 20, 50 ), 0.6 )
 	end
@@ -181,6 +187,7 @@ MODES.wash_spring = function( e, p, age, x, y )
 			if EntityHasTag( id, "player_unit" ) then clear_effects( id, DIRT ) end
 		end
 		light( e, 200, 240, 255, p.r * 2 )
+		effect_sound( "magic", x, y )
 	end
 	local grow = math.min( 1, age / 40 ) * p.r
 	if age < 60 and age % 2 == 0 then edge( x, y, grow, fx_color( "shimmer", 0.7, 1 - age / 60 ), 24, 0 ) end
@@ -192,6 +199,7 @@ end
 MODES.purify = function( e, p, age, x, y )
 	if done( e, p, age ) then return end
 	if age == 0 then convert_around( e, PURIFIES.from, PURIFIES.to, p.r, 6 ) end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	local grow = math.min( 1, age / 40 ) * p.r
 	if age < 60 and age % 2 == 0 then edge( x, y, grow, fx_color( "water", 0.8, 1 - age / 60 ), 28, age * 0.02 ) end
 	local a, d = Random( 0, 628 ) / 100, math.sqrt( Random( 0, 100 ) / 100 ) * grow
@@ -217,6 +225,7 @@ end
 -- Mist Basin: a thick fog - enemies lose sight of whoever is in it
 MODES.mist = function( e, p, age, x, y )
 	if done( e, p, age ) then return end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	local fade = math.min( 1, age / 30, ( p.frames - age ) / 60 )
 	for i = 1, 7 do
 		local a = Random( 0, 628 ) / 100
@@ -234,6 +243,7 @@ end
 -- Beastwarding: pillars of light rise round the caster - beasts are pushed out of the circle and keep away
 MODES.beastward = function( e, p, age, x, y )
 	if done( e, p, age ) then return end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	local n = p.strong == 1 and 8 or 6
 	if age == 0 then light( e, 255, 245, 200, p.r * 1.5 ) end
 	for k = 0, n - 1 do
@@ -259,6 +269,7 @@ end
 -- Dragon's Labyrinth (forbidden): space closes on itself - whoever leaves over the edge comes back from the other side
 MODES.labyrinth = function( e, p, age, x, y )
 	if done( e, p, age ) then return end
+	if age == 0 then effect_sound( "earth", x, y ) end
 	local r = p.r
 	local inside = {}
 	for id in effect_text( p.inside ):gmatch( "%d+" ) do inside[tonumber( id )] = true end
@@ -349,6 +360,7 @@ MODES.chalice = function( e, p, age, x, y )
 		EntityKill( e ) -- it spills what it holds
 		return
 	end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	if age < gather then
 		-- it sweeps the pool in a widening spiral, drinking
 		local t = age / gather
@@ -377,6 +389,7 @@ MODES.vapor = function( e, p, age, x, y )
 		EntityKill( e )
 		return
 	end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	local grow = 2 + 9 * age / p.frames
 	for i = 1, 3 do
 		local a = Random( 0, 628 ) / 100
@@ -507,6 +520,7 @@ MODES.oblivion = function( e, p, age, x, y )
 		p.ids = table.concat( ids, "," )
 	end
 	if done( e, p, age ) then return end
+	if age == 0 then effect_sound( "curse", x, y ) end
 	if age % 12 == 0 then
 		for id in effect_text( p.ids ):gmatch( "%d+" ) do
 			id = tonumber( id )
@@ -543,6 +557,7 @@ MODES.unpolymorph = function( e, p, age, x, y )
 				if comp and comp ~= 0 then ComponentSetValue2( comp, "frames", 1 ) end
 			end
 		end
+		effect_sound( "curse", x, y )
 	end
 	wave( e, p, age, x, y, fx_color( "air", 0.8 ) )
 end
@@ -563,6 +578,7 @@ MODES.slime = function( e, p, age, x, y )
 			end
 			fx_material( "slime", ex, ey - 4, 60, 6 )
 		end
+		effect_sound( "magic", x, y )
 	end
 	wave( e, p, age, x, y, fx_color( "mud", 0.3 ) )
 end
@@ -620,6 +636,7 @@ end
 -- Pouch Guidance: at the guiding mark gold and small things gather, sliding towards it
 MODES.guidance_items = function( e, p, age, x, y )
 	if done( e, p, age ) then return end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	local c = fx_color( "wind", 0.7 )
 	for i = 0, 3 do
 		local a = age * 0.05 + i / 4 * 2 * math.pi
@@ -650,6 +667,7 @@ end
 -- Fish Guidance: a guiding mark; fish of water fly to it from the caster and drench the enemies round it
 MODES.guidance_fish = function( e, p, age, x, y )
 	if done( e, p, age ) then return end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	local c = fx_color( "water", 0.6 )
 	for i = 0, 5 do
 		local a = age * 0.04 + i / 6 * 2 * math.pi
@@ -666,6 +684,7 @@ end
 -- Stream Crossing Ferry: a long even wind blows where the caster aimed, carrying enemies and things along
 MODES.gale = function( e, p, age, x, y )
 	if done( e, p, age ) then return end
+	if age == 0 then effect_sound( "gust", x, y ) end
 	local dx, dy, len, width = p.dx, p.dy, p.len or 220, 24
 	local nx, ny = -dy, dx
 	for i = 1, 5 do

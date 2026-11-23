@@ -359,6 +359,7 @@ end
 -- adds the caster as a node; switching items removes only the caster's rays.
 MODES.tracer = function( e, p, age )
     if done( e, p, age ) then return end
+    if age == 0 then effect_sound( "grow", EntityGetTransform( e ) ) end
     local nodes = {}
     for _, id in ipairs( EntityGetWithTag( "witch_light_fragment" ) or {} ) do
         if EntityGetIsAlive( id ) and effect_params( id ).witch_fragment_group == p.group then
@@ -413,6 +414,8 @@ end
 -- sculpture rather than a hunting creature or a parasitic damage effect.
 MODES.leech = function( e, p, age, x, y )
     if done( e, p, age ) then return end
+    if age == 0 then effect_sound( "magic", x, y ) end
+    sculpture_reflection( p, age, x, y )
     if age == 0 then EntityAddComponent2( e, "LightComponent", { radius = 85, r = 255, g = 240, b = 180, fade_out_time = 1 } ) end
     local scale = p.big * math.min( 1, ( age + 1 ) / 25 )
     local fade = math.min( 1, ( p.frames - age ) / 40 )
@@ -448,6 +451,7 @@ local KINDS = {
 MODES.tracking = function( e, p, age )
 	local owner, x, y = effect_follow( e, p, -6 )
 	if not owner or done( e, p, age ) then return end
+	if age == 0 then effect_sound( "magic", EntityGetTransform( e ) ) end
 	if age % 90 == 0 then
 		for k, kind in ipairs( KINDS ) do
 			local best, best_d = 0, nil
@@ -489,6 +493,7 @@ end
 -- Sigil of Guidance: a guiding mark shines where it was cast; far from it, an arrow by the caster points the way
 MODES.beacon = function( e, p, age, x, y )
 	if done( e, p, age ) then return end
+	if age == 0 then effect_sound( "grow", x, y ) end
 	if age == 0 then EntityAddComponent2( e, "LightComponent", { radius = 70, r = 200, g = 255, b = 230, fade_out_time = 1 } ) end
 	local c = effect_color( p.element, 0.6 )
 	-- a slowly turning star with a column of light

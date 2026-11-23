@@ -128,7 +128,7 @@ def main():
         for p in pages[:: max(1, len(pages) // 3)]:
             run(f"resonance {p['name']}", f'return cast_spell( PLAYER, parse_spell_data( "{p["spell"]}" ), 0, GROUND - 8, 0.99, -0.13, '
                 '60, -20, W.frame, nil )', frames=120)
-    # the book in hand: a click casts the active page; the Repetition Seal repeats it
+    # the book in hand: a click casts the active page; the Repetition Seal casts its own seal again
     run("spellbook_use", 'GlobalsSetValue( "witch_notebook.active_spell", "element=fire;form=column;b=thrust:1" ) '
         'local book = EntityCreateNew( "book" ) EntityAddComponent2( book, "VariableStorageComponent", { name = "witch_notebook_next_cast", value_int = 0 } ) '
         'spellbook_use( book, PLAYER, EntityGetFirstComponent( PLAYER, "ControlsComponent" ), W.frame ) '

@@ -1,4 +1,5 @@
 -- A piece of the seals' solid magic (entities/solid/*.xml) ends: it scatters into dust and a little of its material
+-- (an ember cloud into real fire, a rain cloud into water, sand, snow - crumble.lua's maker, tools/make_gfx.py)
 dofile_once( "mods/witch_notebook/files/fx.lua" )
 
 local e = GetUpdatedEntityID()
@@ -15,7 +16,7 @@ for i = 1, radius * 3 do
 	local px, py = x + Random( -radius, radius ), y + Random( -radius, radius ) * 0.5
 	GameCreateCosmeticParticle( material, px, py, 1, Random( -20, 20 ), Random( -30, 5 ), 0, 0.5, 1.2, true, false, true, true, 0, 60 )
 end
-if material == "sand" or material == "snow" or material == "water" then
+if material == "sand" or material == "snow" or material == "water" or material == "fire" then
 	for i = 1, radius do
 		GameCreateParticle( material, x + Random( -radius, radius ), y + Random( -2, 2 ), 1, 0, 0, false, false, true )
 	end

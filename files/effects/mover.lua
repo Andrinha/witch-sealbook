@@ -66,9 +66,7 @@ end
 -- what the element does to whom it touches
 local function strike( id, element, power, caster, x, y, dir_x, dir_y )
 	if element == "light" then return end -- illumination does not wound or push creatures
-	local kinds = { water = "DAMAGE_PROJECTILE", steam = "DAMAGE_FIRE", fire = "DAMAGE_FIRE", smoke = "DAMAGE_PROJECTILE",
-		light = "DAMAGE_PROJECTILE", earth = "DAMAGE_PROJECTILE", sand = "DAMAGE_PROJECTILE", stone = "DAMAGE_PROJECTILE" }
-	seal_damage( id, 0.25 * power, kinds[element] or "DAMAGE_PROJECTILE", caster, x, y )
+	seal_damage( id, 0.25 * power, effect_damage_kind( element ), caster, x, y )
 	local look = DICTIONARY_LOOKS[element]
 	if look and look.status and look.status ~= "" then give_effect( id, look.status ) end
 	push_creature( id, ( dir_x or 0 ) * 120, ( dir_y or 0 ) * 120 - 60 )
@@ -137,7 +135,7 @@ local function dragon( e, p, age, x, y )
 			fx_dot( b[1] + nx * ( w + 2 ), b[2] + ny * ( w + 2 ), bright, 0, 0, 0.05 )
 		end
 	end
-	sculpture_dragon_head( px, py, big, math.atan2( vy, vx ), p.element, math.min( 1, ( p.frames - age ) / 40 ) )
+	sculpture_dragon_head( px, py, big, math.atan2( vy, vx ), p.element, math.min( 1, ( p.frames - age ) / 40 ), p, age )
 	if p.element == "water" or p.element == "storm" then
 		if age % 3 == 0 then GameCreateParticle( "water", px, py, 1, vx * 0.2, vy * 0.2, false, false, true ) end
 	elseif p.element == "steam" then
@@ -156,7 +154,13 @@ end
 -- the horse: gallops along the ground where the caster aimed and knocks enemies over
 local function horse( e, p, age, x, y )
 	local px, py = pos( e, p, x, y )
+	local big = p.big or 1
 	local dir = ( p.dx or 1 ) >= 0 and 1 or -1
+	if p.mimic == 1 then
+		-- Mimicry: it wheels round to follow the caster's cursor
+		local tx = target_of( p, p.tx, p.ty )
+		dir = tx >= px and 1 or -1
+	end
 	if done( e, p, age ) then return end
 	local gait = GAIT_SPEED[p.shape] or 1
 	local nx = px + dir * 2.6 * gait * ( p.speed or 1 )
@@ -172,12 +176,12 @@ local function horse( e, p, age, x, y )
 	local ny = gy and ( gy - 1 ) or ( py + 3 )
 	move_to( e, nx, ny )
 	local gallop = math.abs( math.sin( age * ( p.shape == "frillram" and .2 or .3 ) ) ) * ( p.shape == "frillram" and 7 or 4 )
-	sculpture_quadruped( p.shape or "horse", nx, ny - ( 12 + gallop ) * ( p.big or 1 ), p.big or 1,
-		dir, age, p.element, math.min( 1, ( p.frames - age ) / 30 ) )
+	sculpture_quadruped( p.shape or "horse", nx, ny - ( 12 + gallop ) * big, big,
+		dir, age, p.element, math.min( 1, ( p.frames - age ) / 30 ), p )
 	if p.shape == "torchstag" and p.element == "fire" then
 		-- Flickering antler tips and a rising plume make this a stag of flame.
 		for i = 0, 2 do
-			local ax, ay = nx + dir * ( 8 + i * 2 ) * p.big, ny - ( 28 + gallop + math.sin( age * .4 + i ) * 3 ) * p.big
+			local ax, ay = nx + dir * ( 5 + i * 3.5 ) * big, ny - ( 34 + gallop + math.sin( age * .4 + i ) * 3 ) * big
 			fx_dot( ax, ay, body_color( "fire", .85 ), -dir * 8, -20, .18 )
 			if age % 4 == 0 then GameCreateParticle( "fire", ax, ay, 1, 0, -10, false, false, true ) end
 		end
@@ -190,30 +194,75 @@ local function horse( e, p, age, x, y )
 		if age % 2 == 0 then fx_dot( nx - dir * 6, ny - 2, body_color( p.element, 0.6 ), -dir * 20, -10, 0.4 ) end
 	end
 	if age % 6 == 0 then
-		for _, id in ipairs( creatures_in( nx, ny - 8, 12, p.owner ) ) do strike( id, p.element, p.power or 1, p.owner, nx, ny, dir, -0.3 ) end
+		for _, id in ipairs( creatures_in( nx, ny - 8 * big, 12 * big, p.owner ) ) do
+			strike( id, p.element, p.power or 1, p.owner, nx, ny, dir, -0.3 )
+		end
 	end
 end
 
--- the bird: flies up and circles round the caster; enemies go for it while it shines
+-- the bird: of light it circles above the caster as a decoy; an element's bird flies at what the caster
+-- aims at and gives its element to whatever it touches
 local function bird( e, p, age, x, y )
 	local owner = effect_owner( p )
 	if not owner or done( e, p, age ) then
 		if not owner then finish( e ) end
 		return
 	end
+	local big = p.big or 1
 	if age == 0 then
-		decoy( e, 3, 5, 5 )
-		EntityAddComponent2( e, "LightComponent", { radius = 70, r = 255, g = 240, b = 180, fade_out_time = 1 } )
+		decoy( e, 3 * ( 1 + 0.3 * math.min( 2, p.strong or 0 ) ), 5 * big, 5 * big )
+		if p.element == "light" then
+			EntityAddComponent2( e, "LightComponent", { radius = 70 * big, r = 255, g = 240, b = 180, fade_out_time = 1 } )
+		end
 	end
-	local ox, oy = EntityGetTransform( owner )
-	local r = math.min( 50, 10 + age * 0.5 )
-	local a = age * 0.045
-	local tx, ty = ox + math.cos( a ) * r, oy - 34 + math.sin( a * 2 ) * 10
 	local px, py = pos( e, p, x, y )
-	px, py = px + ( tx - px ) * 0.1, py + ( ty - py ) * 0.1
-	move_to( e, px, py )
-	local flip = math.cos( a + math.pi / 2 ) < 0
-	sculpture_bird( px, py, p.big or 1, flip, age, p.element, math.min( 1, ( p.frames - age ) / 40 ) )
+	local flip
+	if p.element == "light" then
+		-- light: it keeps the caster company, lighting the way (Mimicry: the cursor's)
+		local ox, oy = EntityGetTransform( owner )
+		ox, oy = target_of( p, ox, oy )
+		local r = math.min( 50, 10 + age * 0.5 )
+		local a = age * 0.045 + ( p.phase or 0 )
+		local tx, ty = ox + math.cos( a ) * r, oy - 34 + math.sin( a * 2 ) * 10
+		px, py = px + ( tx - px ) * 0.1, py + ( ty - py ) * 0.1
+		move_to( e, px, py )
+		flip = math.cos( a + math.pi / 2 ) < 0
+	else
+		-- an element: it circles where the caster aims, or round the enemy nearest there, and strikes
+		local vx, vy = p.vx or ( p.dx or 1 ) * 120, p.vy or 0
+		local tx, ty = target_of( p, p.tx, p.ty )
+		local target = nearest_creature( tx, ty, 180, p.owner )
+		if target then
+			tx, ty = EntityGetTransform( target )
+			ty = ty - 6
+			-- Pull up between passes. Birds in a flock take turns diving.
+			if ( age + 64 * ( p.phase or 0 ) / ( 2 * math.pi ) ) % 64 >= 40 then
+				tx = tx + ( vx >= 0 and 34 or -34 ) * big
+				ty = ty - 22 * big
+			end
+		else
+			local a = age * 0.05 + ( p.phase or 0 )
+			tx, ty = tx + math.cos( a ) * 26, ty - 18 + math.sin( a * 1.5 ) * 10
+		end
+		vx, vy = steer( px, py, vx, vy, tx, ty, 180, 0.08 )
+		px, py = px + vx / 60, py + vy / 60
+		move_to( e, px, py, vx, vy )
+		local speed = math.max( 1, math.sqrt( vx * vx + vy * vy ) )
+		flip = vx < 0
+		if age % 12 == 0 then
+			for _, id in ipairs( creatures_in( px, py, 10 * big, p.owner ) ) do
+				strike( id, p.element, p.power or 1, p.owner, px, py, vx / speed, vy / speed )
+			end
+		end
+		if p.element == "fire" then
+			if age % 2 == 0 then GameCreateParticle( "fire", px, py, 1, 0, -10, false, false, true ) end
+		elseif p.element == "water" or p.element == "storm" then
+			if age % 2 == 0 then GameCreateParticle( "water", px, py, 1, 0, -10, false, false, true ) end
+		elseif p.element == "steam" then
+			if age % 2 == 0 then GameCreateParticle( "steam", px, py, 1, 0, -10, false, false, true ) end
+		end
+	end
+	sculpture_bird( px, py, big, flip, age, p.element, math.min( 1, ( p.frames - age ) / 40 ), p )
 	if age % 3 == 0 then fx_dot( px, py, body_color( p.element, .8 ), flip and 8 or -8, 3, .4 ) end
 end
 
@@ -224,15 +273,16 @@ local function fish( e, p, age, x, y )
 	if done( e, p, age ) then return end
 	local cx, cy = target_of( p, p.tx, p.ty )
 	local target = p.element ~= "light" and nearest_creature( cx, cy, 140, p.owner )
-	local tx, ty = cx + math.cos( age * 0.05 ) * 30, cy + math.sin( age * 0.08 ) * 12
+	local phase = p.phase or 0
+	local tx, ty = cx + math.cos( age * 0.05 + phase ) * 30, cy + math.sin( age * 0.08 + phase ) * 12
 	if target then
 		tx, ty = EntityGetTransform( target )
 		ty = ty - 5
 	end
 	vx, vy = steer( px, py, vx, vy, tx, ty, 140, 0.08 )
-	px, py = px + vx / 60, py + vy / 60 + math.sin( age * 0.4 ) * 0.5
+	px, py = px + vx / 60, py + vy / 60 + math.sin( age * 0.4 + phase ) * 0.5
 	move_to( e, px, py, vx, vy )
-	sculpture_fish( px, py, p.big or 1, math.atan2( vy, vx ), age, p.element, math.min( 1, ( p.frames - age ) / 30 ) )
+	sculpture_fish( px, py, p.big or 1, math.atan2( vy, vx ), age, p.element, math.min( 1, ( p.frames - age ) / 30 ), p )
 	if age % 4 == 0 then fx_dot( px, py, body_color( p.element, 0.8 ), 0, 5, 0.4 ) end
 	if target and ( tx - px ) ^ 2 + ( ty - py ) ^ 2 < 64 then
 		strike( target, p.element, p.power or 1, p.owner, px, py, vx / 140, vy / 140 )
@@ -252,7 +302,8 @@ local function owlcat( e, p, age, x, y )
 	if age == 0 then EntityAddComponent2( e, "LightComponent", { radius = 110, r = 255, g = 235, b = 170, fade_out_time = 1 } ) end
 	local ox, oy = EntityGetTransform( owner )
 	local px, py = pos( e, p, x, y )
-	local tx, ty = ox - 14, oy - 26 + math.sin( age * 0.07 ) * 4
+	local phase = p.phase or 0
+	local tx, ty = ox - 14 * math.cos( phase ), oy - 26 + 10 * math.sin( phase ) + math.sin( age * 0.07 + phase ) * 4
 	local prey = math.floor( ( p.prey or 0 ) + 0.5 )
 	if p.element ~= "light" and age % 40 == 0 then
 		prey = nearest_creature( px, py, 70, owner ) or 0
@@ -262,14 +313,14 @@ local function owlcat( e, p, age, x, y )
 		tx, ty = EntityGetTransform( prey )
 		ty = ty - 6
 		if ( tx - px ) ^ 2 + ( ty - py ) ^ 2 < 50 and age % 40 == 12 then
-			strike( prey, p.element, 0.8, owner, px, py, 0, 0 )
+			strike( prey, p.element, p.power or 1, owner, px, py, 0, 0 )
 			fx_burst( px, py, body_color( "light", 0.7 ), 10, 40, 0.3 )
 		end
 	end
 	px, py = px + ( tx - px ) * 0.12, py + ( ty - py ) * 0.12
 	move_to( e, px, py )
 	local face_left = tx < px
-	sculpture_owlcat( px, py, p.big or 1, face_left, age, p.element, math.min( 1, ( p.frames - age ) / 40 ) )
+	sculpture_owlcat( px, py, p.big or 1, face_left, age, p.element, math.min( 1, ( p.frames - age ) / 40 ), p )
 	if age % 6 == 0 then fx_dot( px + Random( -4, 4 ), py + 6, body_color( p.element, 0.8 ), 0, 10, 0.5 ) end
 end
 
@@ -279,13 +330,21 @@ local function leech( e, p, age, x, y )
 	if done( e, p, age ) then return end
 	local host = math.floor( ( p.host or 0 ) + 0.5 )
 	local c = body_color( p.element, 0.4 )
+	-- Old saves can still have a moving light leech. Let its lattice shine until it fades.
+	if p.element == "light" then
+		sculpture_leech( px, py - 5, ( p.big or 1 ) * .65, age, p.element, math.min( 1, ( p.frames - age ) / 30 ), p )
+		return
+	end
 	if host ~= 0 and EntityGetIsAlive( host ) then
 		local hx, hy = EntityGetTransform( host )
 		move_to( e, hx, hy - 6 )
-		sculpture_leech( hx, hy - 6, ( p.big or 1 ) * .65, age, p.element, math.min( 1, ( p.frames - age ) / 30 ) )
+		sculpture_leech( hx, hy - 6, ( p.big or 1 ) * .65, age, p.element, math.min( 1, ( p.frames - age ) / 30 ), p )
 		if age % 20 == 0 then
 			give_effect( host, MISC .. "effect_blindness.xml", 60 )
-			seal_damage( host, 0.08 * ( p.power or 1 ), "DAMAGE_PROJECTILE", p.owner, hx, hy )
+			local look = DICTIONARY_LOOKS[p.element]
+			if look and look.status and look.status ~= MISC .. "effect_blindness.xml" then give_effect( host, look.status ) end
+			seal_damage( host, 0.08 * ( p.power or 1 ), effect_damage_kind( p.element ),
+				p.owner, hx, hy )
 			fx_dot( hx, hy - 6, body_color( p.element, 0.9 ), 0, -20, 0.5 )
 		end
 		return
@@ -309,11 +368,15 @@ local function leech( e, p, age, x, y )
 	local gx, gy = ground_below( nx, py - CLIMB, 40 + CLIMB )
 	local ny = gy and gy - 2 or py + 1
 	move_to( e, nx, ny )
-	sculpture_leech( nx, ny - 5, ( p.big or 1 ) * .65, age, p.element, math.min( 1, ( p.frames - age ) / 30 ) )
+	sculpture_leech( nx, ny - 5, ( p.big or 1 ) * .65, age, p.element, math.min( 1, ( p.frames - age ) / 30 ), p )
 end
 
 MODES.sculpture = function( e, p, age, x, y )
 	local shape = p.shape
+	if p.reflect then
+		local ground = shape == "horse" or GAIT_SPEED[shape] or shape == "torchstag"
+		sculpture_reflection( p, age, x, y - ( ground and 12 or 0 ) * ( p.big or 1 ) )
+	end
 	if age == 0 and p.element == "light" and shape ~= "bird" and shape ~= "owlcat" then
 		EntityAddComponent2( e, "LightComponent", { radius = 75 * ( p.big or 1 ), r = 255, g = 240, b = 180,
 			offset_y = ( shape == "horse" or shape == "scalewolf" or shape == "torchstag" or shape == "liongoat" or shape == "frillram" ) and -12 or 0,
@@ -353,6 +416,7 @@ end
 MODES.whirlwind = function( e, p, age, x, y )
 	local px, py = pos( e, p, x, y )
 	if done( e, p, age ) then return end
+	if age == 0 then effect_sound( "gust", x, y ) end
 	local target = p.mimic ~= 1 and nearest_creature( px, py, 160, p.owner )
 	local tx = target and select( 1, EntityGetTransform( target ) ) or ( p.tx + math.sin( age * 0.013 ) * 60 )
 	if p.mimic == 1 then tx = target_of( p, tx, py ) end
@@ -392,6 +456,7 @@ MODES.wave = function( e, p, age, x, y )
 	local px, py = pos( e, p, x, y )
 	local dir = ( p.dx or 1 ) >= 0 and 1 or -1
 	if done( e, p, age ) then return end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	local nx = px + dir * 3.2
 	if RaytraceSurfaces( px, py - CLIMB, nx + dir * 8, py - CLIMB ) then
 		fx_material( p.material or "water", px, py - 10, 60, 8, -dir * 30, -40 )
@@ -443,6 +508,7 @@ MODES.ribbon_flight = function( e, p, age, x, y )
 		finish( e )
 		return
 	end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	local step = math.min( d, 5 )
 	px, py = px + dx / d * step, py + dy / d * step + math.sin( age * 0.4 ) * 0.8
 	move_to( e, px, py )
@@ -511,6 +577,7 @@ MODES.fairy = function( e, p, age, x, y )
 		if not owner then finish( e ) end
 		return
 	end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	if age == 0 then decoy( e, 2, 3, 4 ) end
 	local ox, oy = EntityGetTransform( owner )
 	local a = age * 0.06
@@ -563,6 +630,7 @@ end
 -- The Dancing Puppets frame: a puppet darts about in the air where it was cast - enemies chase it, light things fly up
 MODES.puppet = function( e, p, age, x, y )
 	if done( e, p, age ) then return end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	if age == 0 then decoy( e, 4, 4, 10 ) end
 	local t = age * 0.05
 	local big = p.big or 1

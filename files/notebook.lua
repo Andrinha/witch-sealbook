@@ -52,6 +52,7 @@ local FLIP_GAP = 5     -- turned quickly, the next sheet lifts at least this man
 local FLIP_SHEETS = 6  -- at most this many sheets in the air: a longer way turns several pages at once
 local FIRST_OPEN_WAIT = 20 -- opened for the first time, the book lies open this long, then turns to the blank page
 local FULL_GRIMOIRE_SETTING = "witch_notebook.full_grimoire"
+local MARK_SELECTS_INK_SETTING = "witch_notebook.mark_selects_ink"
 -- buttons need ids that stay the same every frame, ink dots use ids from 1 upwards
 local BUTTON = {
 	RECALIBRATE = 900002, BACK = 900003, ON = 900004, -- 900001 and 900008: the calibration's (book_mouse.lua)
@@ -951,9 +952,11 @@ end
 ---- marking what lines are (book_marks.lua) ----
 
 -- The lines circled in 'menu' are 'item' (a reading picked; nil: what the book reads them as); a seal whose ring is
--- closed is read again at once; the pen is taken up again after it
+-- closed is read again at once. The pen is taken up again after it only if the setting says so
+-- (witch_notebook.mark_selects_ink); otherwise Mark stays chosen for more naming.
 local function mark_lines( item, menu )
-	cur.marker_selected, cur.eraser_selected = false, false
+	cur.eraser_selected = false
+	if ModSettingGet( MARK_SELECTS_INK_SETTING ) == true then cur.marker_selected = false end
 	if menu.page ~= cur.edit then return end
 	BookUndo.remember( cur.edit )
 	local mark = item and { kind = item.kind, key = item.key } or nil
@@ -1325,6 +1328,7 @@ local PART_BACK = { 0.95, 0.91, 0.82 }  -- the paper behind the words, so the li
 local function part_does( sym, data, acts, named )
 	if sym.kind == "sigil" then
 		local def = DICTIONARY_SIGILS[sym.key] or {}
+		if def.self then return def.hint or "on the witch herself" end
 		if def.manifest or def.shape then return def.hint or "its own way" end
 		return "the element"
 	end

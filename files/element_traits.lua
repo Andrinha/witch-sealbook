@@ -39,6 +39,12 @@ end
 
 local FREEZES_WATER = { from = "water,water_salt,water_swamp,swamp", to = "ice_static,ice_static,ice_static,ice_static" }
 
+function element_freeze_water_on( entity )
+	EntityAddComponent2( entity, "MagicConvertMaterialComponent", { from_material_array = FREEZES_WATER.from,
+		to_material_array = FREEZES_WATER.to, radius = TRAIT_AMOUNTS.freeze_r, is_circle = true, loop = true,
+		kill_when_finished = false, steps_per_frame = 2 } )
+end
+
 function element_traits_apply( projectile, element, splash )
 	local traits = element_traits( element, splash )
 	local proj = EntityGetFirstComponentIncludingDisabled( projectile, "ProjectileComponent" )
@@ -52,11 +58,7 @@ function element_traits_apply( projectile, element, splash )
 		ComponentSetValue2( proj, "bounce_energy", 0.5 )
 		ComponentSetValue2( proj, "bounce_at_any_angle", true )
 	end
-	if traits.freeze then
-		EntityAddComponent2( projectile, "MagicConvertMaterialComponent", { from_material_array = FREEZES_WATER.from,
-			to_material_array = FREEZES_WATER.to, radius = TRAIT_AMOUNTS.freeze_r, is_circle = true, loop = true,
-			kill_when_finished = false, steps_per_frame = 2 } )
-	end
+	if traits.freeze then element_freeze_water_on( projectile ) end
 	if traits.phase then ComponentSetValue2( proj, "collide_with_world", false ) end
 	local ends = {}
 	for _, key in ipairs( { "flare", "douse", "puff", "sparks" } ) do if traits[key] then ends[#ends + 1] = key end end

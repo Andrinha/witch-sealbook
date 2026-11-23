@@ -107,7 +107,7 @@ SIGIL_SCULPTURE_COLOR = { 110, 220, 200 }
 function sigil_symbol_color( key )
 	local def = DICTIONARY_SIGILS[key] or {}
 	if def.shape then return SIGIL_SCULPTURE_COLOR end
-	if def.manifest or def.behavior then return SIGIL_SPECIAL_COLOR end
+	if def.manifest or def.behavior or def.self then return SIGIL_SPECIAL_COLOR end
 	return sigil_icon_color( def.element )
 end
 

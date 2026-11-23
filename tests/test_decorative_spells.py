@@ -17,9 +17,9 @@ def recipe(shape, element=None):
     return G.Spell("test", "Test", "", "", "", "Sculpting", symbols)
 
 
-def cast_shape(lua, shape, element="light"):
+def cast_shape(lua, shape, element="light", behaviors=""):
     lua.globals().DECORATIVE_DATA = (
-        f"element={element};shape={shape};form=column;precision=1;stability=1;lifetime=-1")
+        f"element={element};shape={shape};form=column;precision=1;stability=1;lifetime=-1;b={behaviors}")
     return lua.execute('''
         return cast_spell(PLAYER, parse_spell_data(DECORATIVE_DATA), 0, -40, 1, 0, 180, -40, W.frame, nil)
     ''')
@@ -51,6 +51,89 @@ class DecorativeSpells(unittest.TestCase):
                 self.assertIsNotNone(spell, data)
                 self.assertIsNone(spell["shape"])
                 self.assertEqual(spell["element"], element)
+
+    def test_drawn_lightning_horse_deals_electric_damage_and_strengthening_increases_it(self):
+        hits = []
+        for strengthened in (False, True):
+            lua = world_runtime()
+            drawing = recipe("horse", "lightning")
+            if strengthened:
+                drawing.symbols.extend(G.around("strengthen", [0, 180], .76, .23))
+            spell, data, _ = Generator.compile_page(lua, Generator.render_recipe(lua, drawing))
+            self.assertEqual((spell["shape"], spell["element"]), ("horse", "thunder"))
+            lua.globals().HORSE_DATA = data
+            lua.execute("GROUND = -20")
+            freeze_enemies(lua, [(32, -28)])
+            lua.execute("""
+                cast_spell(PLAYER, parse_spell_data(HORSE_DATA), 0, -40, 1, 0, 180, -40, W.frame, nil)
+                simulate(20)
+            """)
+            target = lua.eval("ENEMIES[1]")
+            contact = [h for h in lua.eval("W.hits").values() if h["id"] == target]
+            self.assertTrue(contact)
+            self.assertEqual(contact[0]["kind"], "DAMAGE_ELECTRICITY")
+            hits.append(contact[0]["amount"])
+        self.assertGreater(hits[1], hits[0])
+
+    def test_mimicry_turns_a_galloping_horse_after_the_cast(self):
+        for steered in (False, True):
+            lua = world_runtime()
+            drawing = recipe("horse", "water")
+            if steered:
+                drawing.symbols.extend(G.around("mimicry", [0, 180], .76, .23))
+            spell, data, _ = Generator.compile_page(lua, Generator.render_recipe(lua, drawing))
+            self.assertEqual(spell["shape"], "horse")
+            lua.globals().HORSE_DATA = data
+            before, after = lua.execute("""
+                GROUND = -20
+                local e = cast_spell(PLAYER, parse_spell_data(HORSE_DATA), 0, -40, 1, 0, 150, -20, W.frame, nil)[1]
+                simulate(12)
+                local x = EntityGetTransform(e)
+                ComponentSetValue2(EntityGetFirstComponent(PLAYER, "ControlsComponent"), "mMousePosition", -100, -20)
+                simulate(12)
+                return x, EntityGetTransform(e)
+            """)[:2]
+            self.assertEqual(after < before, steered)
+
+    def test_elemental_birds_apply_their_element_on_a_pass(self):
+        for element, kind, status in (("fire", "FIRE", "effect_apply_on_fire"),
+                                      ("water", "PROJECTILE", "effect_apply_wet"),
+                                      ("ice", "ICE", "effect_frozen_short")):
+            with self.subTest(element=element):
+                lua = world_runtime()
+                freeze_enemies(lua, [(70, -44), (500, -60), (550, -40)])
+                cast_shape(lua, "bird", element)
+                lua.execute("simulate(85)")
+                target = lua.eval("ENEMIES[1]")
+                self.assertIn("DAMAGE_" + kind, [h["kind"] for h in lua.eval("W.hits").values() if h["id"] == target])
+                effects = (lua.eval("EntityGetAllChildren")(target) or {}).values()
+                self.assertIn(f"data/entities/misc/{status}.xml", [lua.eval("EntityGetFilename")(e) for e in effects])
+
+    def test_reflection_turns_incoming_shots_at_the_sculpture(self):
+        for shape in ("bird", "leech"):
+            for warded in (False, True):
+                with self.subTest(shape=shape, warded=warded):
+                    lua = world_runtime()
+                    drawing = recipe(shape)
+                    if warded:
+                        drawing.symbols.extend(G.around("reflection", [0, 180], .78, .25))
+                    spell, data, _ = Generator.compile_page(lua, Generator.render_recipe(lua, drawing))
+                    self.assertEqual(spell["shape"], shape)
+                    lua.globals().WARD_DATA = data
+                    vx, owner = lua.execute("""
+                        local e = cast_spell(PLAYER, parse_spell_data(WARD_DATA), 0, -40, 1, 0, 120, -40, W.frame, nil)[1]
+                        simulate(12)
+                        local x, y = EntityGetTransform(e)
+                        local shot = EntityCreateNew("incoming shot")
+                        EntitySetTransform(shot, x + 9, y)
+                        EntityAddTag(shot, "projectile")
+                        local proj = EntityAddComponent2(shot, "ProjectileComponent", {mWhoShot=ENEMIES[1], lifetime=80})
+                        local vel = EntityAddComponent2(shot, "VelocityComponent", {mVelocity={-60, 0}})
+                        simulate(3)
+                        return ComponentGetValue2(vel, "mVelocity"), ComponentGetValue2(proj, "mWhoShot")
+                    """)
+                    self.assertEqual(vx > 0, warded)
+                    self.assertEqual(owner, lua.eval("PLAYER" if warded else "ENEMIES[1]"))
 
     def test_all_light_creatures_reveal_and_never_hurt_or_blind(self):
         for shape in SHAPES:

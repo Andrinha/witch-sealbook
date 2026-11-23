@@ -291,24 +291,254 @@ MODES.cage = function( e, p, age, x, y )
 	end
 end
 
--- Billow, Billow Cluster, Serpent's Bed: a fluffy cloud to stand on; pressed in, it grows back
-MODES.cloud = function( e, p, age, x, y )
-	if done( e, p, age ) then return end
-	local kind = p.piece or "cloud"
-	local piece = math.floor( ( p.piece_id or 0 ) + 0.5 )
-	if age < 30 then
-		-- the loose stuff around gathers into it
-		for k = 1, 4 do
-			local a = Random( 0, 628 ) / 100
-			local r = Random( 25, 45 )
-			fx_dot( x + math.cos( a ) * r, y + math.sin( a ) * r, effect_color( kind == "cloud" and "air" or "sand", 0.3 ), -math.cos( a ) * r * 2, -math.sin( a ) * r * 2, 0.5 )
-		end
-	elseif piece == 0 or ( not EntityGetIsAlive( piece ) and age % 60 == 0 ) then
-		effect_set( e, "piece_id", solid_piece( kind, x, y, p.frames - age ) )
-		fx_burst( x, y, effect_color( kind == "cloud" and "air" or "sand", 0.5 ), 20, 30, 0.6 )
+-- Billow, Billow Cluster: a fluffy cloud to stand on; pressed in, it grows back. What is drawn round the sigil
+-- shapes it (manifest.lua M.cloud): the element gives the cloud a temper - sand heaps up a cloud of sand, fire
+-- embers that scorch what is beneath, water a rain that puts out fire, crystal and frost snow that freezes the
+-- water around, lightning a storm that strikes down at what comes under it, light a lamp of a cloud, smoke wisps,
+-- wind blowing through, flicker fireworks; Collection keeps the matter streaming in and the cloud heaps up one
+-- billow at a time, its inverse scatters it into nothing, Expansion heaps up more billows from the start, Binding
+-- holds whoever climbs onto it, the Spiraling Wind spins its streams round, Aeriforms blow it away, and Mimicry
+-- makes it dissolve and flow together again where the cursor has gone.
+local CLOUD_HEAP = {
+	{ "main", 0, 0 }, { "l", -22, 2 }, { "l", 22, 2 }, { "m", -12, -4 }, { "m", 12, -4 }, { "s", 0, -8 },
+}
+local CLOUD_HALF_EXTRA, CLOUD_GATHER, CLOUD_REGROW, CLOUD_FLOW = 13, 480, 60, 40
+
+-- the heap's piece kinds: the middle in the temper's own look, the puffs beside it in the same
+local CLOUD_PUFFS = { cloud = "cloud_puff_", sand_cloud = "sand_puff_", ember_cloud = "ember_puff_",
+	rain_cloud = "rain_puff_", frost_cloud = "frost_puff_", storm_cloud = "storm_puff_", glow_cloud = "glow_puff_" }
+local function cloud_kinds( p )
+	local main = p.piece or "cloud"
+	local puff = CLOUD_PUFFS[main] or "cloud_puff_"
+	local kinds = {}
+	for i, q in ipairs( CLOUD_HEAP ) do kinds[i] = q[1] == "main" and main or puff .. q[1] end
+	return kinds
+end
+
+local function cloud_plan( p, x, y, count )
+	-- the plan holds absolute places (build.lua's build()), so what grows or grows back reads them as they are
+	local kinds = cloud_kinds( p )
+	local plan = {}
+	for i = 1, math.min( count, #CLOUD_HEAP ) do
+		plan_add( plan, kinds[i], x + CLOUD_HEAP[i][2], y + CLOUD_HEAP[i][3] )
 	end
-	if age % 5 == 0 then
-		fx_dot( x + Random( -18, 18 ), y + Random( -6, 6 ), effect_color( kind == "cloud" and "air" or "sand", 0.8, 0.7 ), Random( -4, 4 ), -3, 1 )
+	return plan
+end
+
+-- how many billows Expansion heaps up round the middle (its inverse: one lone wide cloud)
+local function cloud_count( p )
+	local grow = p.grow or 1
+	if grow < 1.1 then return 1 end
+	if grow < 1.5 then return 3 end
+	return 5
+end
+
+-- how wide the heap stands now: half the span of the billows its plan holds
+local function cloud_half( p )
+	local n = 0
+	for _ in effect_text( p.plan ):gmatch( "([%w_]+)," ) do n = n + 1 end
+	return 18 + CLOUD_HALF_EXTRA * ( math.max( 1, n ) - 1 ) / ( #CLOUD_HEAP - 1 )
+end
+
+-- the loose matter around, streaming into the cloud's middle
+local function cloud_stream( p, x, y, wide )
+	local element = ( p.temper or "plain" ) == "sand" and "sand" or ( p.element or "air" )
+	for k = 1, 3 do
+		local a = Random( 0, 628 ) / 100
+		local r = Random( 25, 45 ) * wide
+		local sx, sy = x + math.cos( a ) * r, y + math.sin( a ) * r * 0.7
+		fx_dot( sx, sy, effect_color( element, 0.3 ), ( x - sx ) * 1.5, ( y - sy ) * 1.5 - 10, 0.45 )
+	end
+end
+
+-- whoever is on the cloud now: standing, lying or riding it
+local function cloud_riders( p, x, y, half )
+	local out = {}
+	for _, id in ipairs( creatures_in( x, y - 10, half + 12, p.owner, true ) ) do
+		local cx, cy = EntityGetTransform( id )
+		if math.abs( cx - x ) <= half and cy < y + 4 and cy > y - 24 then out[#out + 1] = id end
+	end
+	return out
+end
+
+-- the temper's own show: what the cloud of that element sheds, and what it does to what is beneath it
+local function cloud_temper( p, age, x, y )
+	local temper = p.temper or "plain"
+	local half = cloud_half( p )
+	if temper == "plain" or temper == "sand" then
+		-- a soft sparkle over its top
+		fx_dot( x + Random( -18, 18 ), y + Random( -8, 4 ), effect_color( temper == "sand" and "sand" or "air", 0.8, 0.7 ), Random( -4, 4 ), -3, 1 )
+	elseif temper == "ember" then
+		-- embers drop from its underside; whoever lies on it or beneath it smolders
+		fx_dot( x + Random( -half, half ), y + 6, fx_color( "fire", 0.7 ), Random( -5, 5 ), Random( 10, 30 ), 0.7, 50 )
+		if age % 20 == 0 then
+			for _, id in ipairs( cloud_riders( p, x, y, half ) ) do
+				seal_damage( id, 0.04 * ( p.power or 1 ), "DAMAGE_FIRE", p.owner, EntityGetTransform( id ) )
+				give_effect( id, MISC .. "effect_apply_on_fire.xml", 90 )
+			end
+		end
+		if age % 30 == 0 then
+			for _, id in ipairs( creatures_in( x, y + 12, half + 10, 0, true ) ) do
+				local cx, cy = EntityGetTransform( id )
+				if cy > y - 4 then seal_damage( id, 0.04 * ( p.power or 1 ), "DAMAGE_FIRE", p.owner, cx, cy ) end
+			end
+		end
+	elseif temper == "rain" then
+		-- droplets fall - real water, that puts out fire on whoever is under it and on it
+		fx_dot( x + Random( -half, half ), y + 7, fx_color( "water", 0.5 ), Random( -3, 3 ), Random( 20, 40 ), 0.7, 90 )
+		if age % 8 == 0 then GameCreateParticle( "water", x + Random( -half, half ), y + 7, 1, 0, 30, false, false, true ) end
+		if age % 30 == 0 then
+			for _, id in ipairs( cloud_riders( p, x, y, half ) ) do clear_effects( id, { "ON_FIRE" } ) end
+			for _, id in ipairs( creatures_in( x, y + 12, half + 10, 0, true ) ) do
+				local cx, cy = EntityGetTransform( id )
+				if cy > y - 4 then clear_effects( id, { "ON_FIRE" } ) end
+			end
+		end
+	elseif temper == "snow" then
+		-- snow drifts down, and the water round the cloud freezes (the converter set up when it gathered)
+		fx_dot( x + Random( -half, half ), y + 6, fx_color( "frost", 0.7 ), Random( -3, 3 ), Random( 6, 14 ), 0.9, 15 )
+		if age % 12 == 0 then GameCreateParticle( "snow", x + Random( -half, half ), y + 7, 1, 0, 10, false, false, true ) end
+	elseif temper == "storm" then
+		-- sparks crackle under it; now and then it strikes down at what has come under it
+		fx_dot( x + Random( -half, half ), y + Random( 2, 8 ), fx_color( "thunder", 0.8 ), Random( -20, 20 ), Random( 10, 40 ), 0.3 )
+		if age % 90 == 30 then
+			local victim = nearest_creature( x, y + 16, 80, p.owner )
+			if victim then
+				local cx, cy = EntityGetTransform( victim )
+				fx_line( x + Random( -8, 8 ), y + 6, cx, cy - 6, fx_color( "thunder", 1 ), 3, 0.35, 3 )
+				seal_damage( victim, 0.25 * ( p.power or 1 ), "DAMAGE_ELECTRICITY", p.owner, cx, cy )
+			end
+		end
+	elseif temper == "glow" then
+		-- a lamp of a cloud: bright motes rise from it
+		fx_dot( x + Random( -half, half ), y + Random( -6, 2 ), fx_color( "light", 0.9 ), Random( -3, 3 ), Random( -10, -4 ), 0.8 )
+	elseif temper == "wisp" then
+		-- wisps shed off its top and drift away
+		fx_dot( x + Random( -half, half ), y - Random( 0, 6 ), effect_color( p.element or "smoke", 0.4, 0.6 ), Random( -6, 6 ), -Random( 6, 16 ), 0.9 )
+	elseif temper == "wind" then
+		-- a gust blows through it, off the top of the cloud
+		fx_dot( x - half - 8, y + Random( -10, 6 ), fx_color( "wind", 0.7, 0.6 ), Random( 60, 90 ), Random( -5, 5 ), 0.8 )
+	elseif temper == "sparkle" then
+		-- fireworks pop round it in its element's colors
+		local a = Random( 0, 628 ) / 100
+		fx_dot( x + math.cos( a ) * Random( 4, half ), y + math.sin( a ) * Random( 2, 8 ),
+			effect_color( p.element or "flicker", Random( 300, 900 ) / 1000, 0.9 ), 0, -Random( 10, 30 ), 0.7 )
+	end
+end
+
+MODES.cloud = function( e, p, age, x, y )
+	-- the signs that undo it: the cloud's matter streams away and nothing gathers (the inverted Collection, and
+	-- Aeriforms' gust that carries it off the way the caster threw it)
+	if ( p.scatter or 0 ) > 0 or ( p.gust or 0 ) > 0 then
+		local dx, dy = 0, 0
+		if ( p.gust or 0 ) > 0 then
+			local owner = effect_owner( p )
+			local ox, oy = 0, -40
+			if owner then ox, oy = EntityGetTransform( owner ) end
+			local d = math.max( 1, math.sqrt( ( x - ox ) ^ 2 + ( y - oy ) ^ 2 ) )
+			dx, dy = ( x - ox ) / d, ( y - oy ) / d
+		end
+		for k = 1, 3 do
+			local a = ( p.gust or 0 ) > 0 and math.atan2( dy, dx ) or Random( 0, 628 ) / 100
+			local r = 14 + age
+			fx_dot( x + math.cos( a ) * r, y + math.sin( a ) * r * 0.5, effect_color( p.element or "air", 0.3 ),
+				math.cos( a ) * 30 + dx * 70, math.sin( a ) * 15 + dy * 70, 0.5 )
+		end
+		if age == 40 then fx_ring( x, y, 20, effect_color( p.element or "air", 0.5, 0.7 ), 16, 60, 0.4 ) end
+		if age > 40 then EntityKill( e ) end
+		return
+	end
+	if age == 0 then
+		planned( e, p, cloud_plan( p, x, y, cloud_count( p ) ) )
+		p.flow = CLOUD_FLOW
+		effect_set( e, "flow", p.flow )
+		if p.temper == "glow" then effect_glow( e, 255, 235, 150, 70, 0.5 )
+		elseif p.temper == "ember" then effect_glow( e, 255, 130, 40, 55, 0.4 ) end
+		-- the air round a snow cloud freezes the water in it
+		if p.temper == "snow" then convert_around( e, FREEZES.from, FREEZES.to, 40, 3 ) end
+	end
+	if done( e, p, age ) then return end
+	-- Mimicry: the cloud dissolves, and flows together again where the cursor has gone
+	local flow = math.floor( p.flow or 0 )
+	if p.mimic == 1 and flow == 0 and age % 6 == 0 then
+		local owner = effect_owner( p )
+		local controls = owner and EntityGetFirstComponent( owner, "ControlsComponent" )
+		if controls then
+			local mx, my = ComponentGetValue2( controls, "mMousePosition" )
+			if ( mx - x ) ^ 2 + ( my - y ) ^ 2 > 60 * 60 then
+				local n = 0
+				for _ in effect_text( p.plan ):gmatch( "([%w_]+),(-?%d+),(-?%d+)" ) do n = n + 1 end
+				for kind, px, py in effect_text( p.plan ):gmatch( "([%w_]+),(-?%d+),(-?%d+)" ) do
+					for _, id in ipairs( EntityGetInRadiusWithTag( tonumber( px ), tonumber( py ), 3, "witch_solid" ) or {} ) do EntityKill( id ) end
+					fx_burst( tonumber( px ), tonumber( py ), effect_color( p.element or "air", 0.5, 0.6 ), 6, 25, 0.4 )
+				end
+				EntitySetTransform( e, mx, my )
+				x, y = mx, my
+				-- the heap it had gathered flows together again, whole, at the cursor's new place
+				planned( e, p, cloud_plan( p, x, y, n ) )
+				flow, p.built = CLOUD_FLOW, 0
+				p.flow = flow
+				effect_set( e, "flow", flow )
+				effect_set( e, "built", 0 )
+			end
+		end
+	end
+	-- the matter gathers: streams first, then the billows heap up, the middle one first
+	local finished = false
+	if flow > 0 then
+		cloud_stream( p, x, y, 1 )
+		p.flow = flow - 1
+		effect_set( e, "flow", p.flow )
+	else
+		finished = build( e, p, age, 1, 2 )
+		-- Collection: the streams keep coming, and now and then the cloud heaps up another billow
+		if ( p.gather or 0 ) > 0 then
+			if age % 5 == 0 then cloud_stream( p, x, y, 1.6 ) end
+			if finished and age % math.floor( CLOUD_GATHER / math.max( 0.7, p.gather ) ) == 0 then
+				local plan, n = effect_text( p.plan ), 0
+				for _ in plan:gmatch( "([%w_]+),(-?%d+),(-?%d+)" ) do n = n + 1 end
+				if n < #CLOUD_HEAP then
+					local kind = cloud_kinds( p )[n + 1]
+					local q = CLOUD_HEAP[n + 1]
+					plan = plan .. ";" .. string.format( "%s,%d,%d", kind, x + q[2], y + q[3] )
+					effect_set( e, "plan", plan )
+					p.plan = plan
+					-- the new billow pops in at once, a puff out of the gathered matter
+					solid_piece( kind, x + q[2], y + q[3], math.max( 30, p.frames - age ) )
+					p.built = n + 1
+					effect_set( e, "built", p.built )
+					fx_burst( x + q[2], y + q[3], effect_color( p.element or "air", 0.4, 0.8 ), 10, 25, 0.5 )
+				end
+			end
+		end
+	end
+	-- a billow that is dug or blown away grows again; Strengthening brings it back sooner
+	if finished and age % ( ( p.strong or 0 ) > 0 and 20 or CLOUD_REGROW ) == 0 then
+		for kind, px, py in effect_text( p.plan ):gmatch( "([%w_]+),(-?%d+),(-?%d+)" ) do
+			if #( EntityGetInRadiusWithTag( tonumber( px ), tonumber( py ), 3, "witch_solid" ) or {} ) == 0 then
+				solid_piece( kind, tonumber( px ), tonumber( py ), math.max( 30, p.frames - age ) )
+				fx_burst( tonumber( px ), tonumber( py ), effect_color( p.element or "air", 0.5, 0.7 ), 8, 25, 0.4 )
+			end
+		end
+	end
+	-- the temper's show: rain, embers, snow, bolts, wisps, glow
+	if flow == 0 and age % 4 == 0 then cloud_temper( p, age, x, y ) end
+	-- the Spiraling Wind: sparks circle the cloud as it stands, as its streams did while it gathered
+	if ( p.whirl or 0 ) > 0 and age % 2 == 0 then
+		local a = age * 0.12
+		for k = 0, 2 do
+			local t = a + k * 2.1
+			fx_dot( x + math.cos( t ) * ( cloud_half( p ) + 5 ), y + math.sin( t ) * 6, effect_color( p.element or "air", 0.5, 0.7 ), -math.sin( t ) * 30, math.cos( t ) * 8, 0.4 )
+		end
+	end
+	-- Binding: whoever climbs onto the cloud is held on it, as if time had stopped for them there
+	if ( p.hold or 0 ) > 0 and age % 12 == 0 then
+		for _, id in ipairs( creatures_in( x, y - 10, cloud_half( p ) + 12, p.owner, true ) ) do
+			local cx, cy = EntityGetTransform( id )
+			if math.abs( cx - x ) <= cloud_half( p ) and cy < y + 4 and cy > y - 24 then
+				hold_creature( id, 24, "time", p.element or "light", p.owner )
+			end
+		end
 	end
 end
 
@@ -377,6 +607,7 @@ end
 MODES.disc = function( e, p, age, x, y )
 	if age == 0 then solid_piece( "water_disc", x, y, p.frames ) end
 	if done( e, p, age ) then return end
+	if age == 0 then effect_sound( "grow", x, y ) end
 	local c = fx_color( "water", 0.4, 0.8 )
 	for k = 0, 3 do
 		local a = age * 0.05 + k / 4 * 2 * math.pi

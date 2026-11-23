@@ -98,6 +98,7 @@ end
 MODES.geyser = function( e, p, age )
 	local owner, x, y = effect_follow( e, p )
 	if not owner or done( e, p, age ) then return end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	local _, cd = body( owner )
 	if age < p.frames - 12 then set_velocity( cd, nil, -230 ) end
 	for i = 1, 6 do
@@ -110,6 +111,7 @@ end
 MODES.wave_ride = function( e, p, age )
 	local owner, x, y = effect_follow( e, p )
 	if not owner or done( e, p, age ) then return end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	local _, cd = body( owner )
 	local dir = ( p.dx or 1 ) >= 0 and 1 or -1
 	set_velocity( cd, dir * 170, age < p.frames * 0.6 and -110 or nil )
@@ -127,6 +129,7 @@ end
 MODES.sylph = function( e, p, age )
 	local owner, x, y = effect_follow( e, p )
 	if not owner or done( e, p, age ) then return end
+	if age == 0 then effect_sound( "gust", x, y ) end
 	local _, cd = body( owner )
 	endless_flight( cd )
 	if cd then
@@ -149,6 +152,7 @@ MODES.pegasus = function( e, p, age )
 		EntityKill( e )
 		return
 	end
+	if age == 0 then effect_sound( "gust", x, y ) end
 	if age == 0 and platforming then
 		p.gravity = ComponentGetValue2( platforming, "pixel_gravity" )
 		effect_set( e, "gravity", p.gravity )
@@ -171,6 +175,7 @@ end
 MODES.skysoar = function( e, p, age )
 	local owner, x, y = effect_follow( e, p )
 	if not owner or done( e, p, age ) then return end
+	if age == 0 then effect_sound( "gust", x, y ) end
 	local _, cd = body( owner )
 	if age < 12 then set_velocity( cd, p.dx * 420, p.dy * 420 - 70 ) end
 	for i = 1, 4 do
@@ -183,6 +188,7 @@ end
 MODES.wind_wall = function( e, p, age )
 	local owner, x, y = effect_follow( e, p, -4 )
 	if not owner or done( e, p, age ) then return end
+	if age == 0 then effect_sound( "gust", x, y ) end
 	local r = p.radius or 28
 	for i = 1, 10 do
 		local a = age * 0.2 + i / 10 * 2 * math.pi + Random( -10, 10 ) / 100
@@ -211,7 +217,10 @@ end
 MODES.bubble = function( e, p, age )
 	local owner, x, y = effect_follow( e, p, -4 )
 	if not owner or done( e, p, age ) then return end
-	if age == 0 then EntityAddComponent2( e, "LiquidDisplacerComponent", { radius = 12, velocity_x = 30, velocity_y = 30 } ) end
+	if age == 0 then
+		effect_sound( "magic", x, y )
+		EntityAddComponent2( e, "LiquidDisplacerComponent", { radius = 12, velocity_x = 30, velocity_y = 30 } )
+	end
 	if age % 60 == 0 then give_effect( owner, MISC .. "effect_breath_underwater.xml", 90 ) end
 	if age % 2 == 0 then
 		local c = fx_color( "air", 0.5, 0.7 )
@@ -295,6 +304,7 @@ end
 MODES.washbarrel = function( e, p, age )
 	local owner, x, y = effect_follow( e, p, -4 )
 	if not owner then return end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	if age >= p.frames then
 		clear_effects( owner, DIRT )
 		give_effect( owner, MISC .. "effect_stainless_armour.xml", 600 )
@@ -348,6 +358,7 @@ MODES.cookpot = function( e, p, age )
 			EntityKill( e )
 			return
 		end
+		effect_sound( "magic", x, y )
 		local parts = {}
 		for id, n in pairs( ( contents( item ) ) ) do parts[#parts + 1] = id .. ":" .. n end
 		effect_set( e, "item", item )
@@ -533,6 +544,7 @@ MODES.umbrella = function( e, p, age )
 	local owner, x, y = effect_follow( e, p, -22 )
 	if not owner or done( e, p, age ) then return end
 	if age == 0 then
+		effect_sound( "magic", x, y )
 		convert_around( e, "water,water_salt,water_swamp,swamp,acid,blood,oil,slime,poison,radioactive_liquid,mud,urine",
 			"air,air,air,air,air,air,air,air,air,air,air,air", 13, 6 )
 	end
@@ -561,7 +573,10 @@ end
 MODES.xray = function( e, p, age )
 	local owner, x, y = effect_follow( e, p, -10 )
 	if not owner then return end
-	if age == 0 then give_effect( owner, MISC .. "effect_remove_fog_of_war.xml", p.frames ) end
+	if age == 0 then
+		effect_sound( "magic", x, y )
+		give_effect( owner, MISC .. "effect_remove_fog_of_war.xml", p.frames )
+	end
 	if done( e, p, age ) then return end
 	if age < 60 then
 		local r = age * 4
@@ -576,6 +591,7 @@ end
 MODES.walk_liquid = function( e, p, age )
 	local owner, x, y = effect_follow( e, p )
 	if not owner or done( e, p, age ) then return end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	local _, cd = body( owner )
 	local wet, wx, wy = RaytraceSurfacesAndLiquiform( x, y - 2, x, y + 7 )
 	local solid = RaytraceSurfaces( x, y - 2, x, y + 7 )
@@ -616,6 +632,7 @@ local function hover( e, p, age, lift, draw )
 end
 
 MODES.levitate = function( e, p, age )
+	if age == 0 then effect_sound( "magic", EntityGetTransform( e ) ) end
 	hover( e, p, age, 36, function( x, y, age )
 		if age % 2 == 0 then fx_dot( x + Random( -4, 4 ), y + 6, fx_color( "wind", 0.7, 0.8 ), 0, 20, 0.3 ) end
 	end )
@@ -627,6 +644,7 @@ end
 -- comes loose behind it now and then.
 local BOOK_BEAT = { 1, 2, 3, 2 }
 MODES.book = function( e, p, age )
+	if age == 0 then effect_sound( "magic", EntityGetTransform( e ) ) end
 	hover( e, p, age, 20, function( x, y, age )
 		local grown = math.min( age, p.frames - age )
 		local frame = grown < 6 and "small" or grown < 12 and "mid" or BOOK_BEAT[math.floor( age / 7 ) % 4 + 1]
@@ -654,6 +672,7 @@ end
 -- Sealchair: a stone armchair carries the caster, walking over the ground
 MODES.chair = function( e, p, age )
 	p.follow_ground = 12
+	if age == 0 then effect_sound( "magic", EntityGetTransform( e ) ) end
 	hover( e, p, age, 12, function( x, y, age )
 		local step = math.floor( age / 8 ) % 2
 		GameCreateSpriteForXFrames( "mods/witch_notebook/files/gfx/sealchair.png", x - 2, y + 2 + step, true, 0, 0, 1, false )
@@ -665,6 +684,7 @@ end
 MODES.heal = function( e, p, age )
 	local owner, x, y = effect_follow( e, p, -6 )
 	if not owner or done( e, p, age ) then return end
+	if age == 0 then effect_sound( "heart", x, y ) end
 	local dm = EntityGetFirstComponent( owner, "DamageModelComponent" )
 	if dm and age % 10 == 0 then
 		local hp, max_hp = ComponentGetValue2( dm, "hp" ), ComponentGetValue2( dm, "max_hp" )
@@ -677,6 +697,7 @@ end
 MODES.amplify = function( e, p, age )
 	local owner, x, y = effect_follow( e, p, -6 )
 	if not owner or done( e, p, age ) then return end
+	if age == 0 then effect_sound( "magic", x, y ) end
 	local r = 6 + age * 0.4
 	for i = 0, 9 do
 		local a = i / 10 * 2 * math.pi + age * 0.1
@@ -700,6 +721,7 @@ MODES.quill = function( e, p, age )
 	effect_set( e, "px", x )
 	effect_set( e, "py", y )
 	EntitySetTransform( e, x, y )
+	if age == 0 then effect_sound( "magic", x, y ) end
 	local material = p.material ~= "" and p.material or "water"
 	local c = effect_color( p.element, 0.4 )
 	for k = 0, 4 do fx_dot( x + k * 0.8, y - k * 1.6, c, 0, 0, 0.05 ) end -- the quill's nib
