@@ -9,29 +9,50 @@ local D = BookDraw
 
 local gui
 local widget_id = 0
+local ui_scale = 1 -- the book's design units -> gui units: the mod's "Book UI scale" setting
+local fit_cache = {}
 
 -- every frame, before drawing: widgets need ids that stay the same from frame to frame, the images count from 1
 function D.begin( g )
 	gui = g
 	widget_id = 1
 end
-function D.gui() return gui end
 function D.next_id()
 	widget_id = widget_id + 1
 	return widget_id
 end
 
+-- The open book is laid out and drawn in its own units, as at 100%; every gui call is scaled here, once.
+function D.set_scale( k )
+	if k ~= ui_scale then ui_scale, fit_cache = k, {} end
+end
+
+-- text measured in the book's units (the font is drawn at 'scale' times the UI scale)
+function D.text_dimensions( str, scale )
+	local w, h = GuiGetTextDimensions( gui, str, ( scale or 1 ) * ui_scale )
+	return w / ui_scale, h / ui_scale
+end
+function D.text_width( str, scale )
+	return ( D.text_dimensions( str, scale ) )
+end
+
 function D.text( x, y, str, color, z, alpha, scale )
 	GuiZSetForNextWidget( gui, z or 20 )
 	if color then GuiColorSetForNextWidget( gui, color[1], color[2], color[3], alpha or 1 ) end
-	GuiText( gui, x, y, str, scale or 1 )
-	return GuiGetTextDimensions( gui, str, scale or 1 )
+	GuiText( gui, x * ui_scale, y * ui_scale, str, ( scale or 1 ) * ui_scale )
+	return D.text_dimensions( str, scale )
 end
 
 function D.image( x, y, file, z, color, alpha, sx, sy )
 	GuiZSetForNextWidget( gui, z )
 	if color then GuiColorSetForNextWidget( gui, color[1], color[2], color[3], alpha or 1 ) end
-	GuiImage( gui, D.next_id(), x, y, file, alpha or 1, sx or 1, sy or sx or 1 )
+	GuiImage( gui, D.next_id(), x * ui_scale, y * ui_scale, file, alpha or 1, ( sx or 1 ) * ui_scale,
+		( sy or sx or 1 ) * ui_scale )
+end
+
+-- a button in the book's units, its text scaled with it
+function D.button( id, x, y, label )
+	return GuiButton( gui, id, x * ui_scale, y * ui_scale, label, ui_scale )
 end
 
 function D.rect( x, y, w, h, color, z, alpha )
@@ -67,21 +88,20 @@ local UTF8_CHAR = "[%z\1-\127\194-\244][\128-\191]*"
 D.UTF8_CHAR = UTF8_CHAR
 
 -- 'str' cut to fit 'width', with dots where it was cut (a long name of a composed seal)
-local fit_cache = {}
 function D.fitted( str, width )
-	if GuiGetTextDimensions( gui, str ) <= width then return str end
+	if D.text_width( str ) <= width then return str end
 	local key = width .. "|" .. str
 	if fit_cache[key] then return fit_cache[key] end
 	local chars = {}
 	for ch in str:gmatch( UTF8_CHAR ) do chars[#chars + 1] = ch end
-	while #chars > 0 and GuiGetTextDimensions( gui, table.concat( chars ) .. "..." ) > width do table.remove( chars ) end
+	while #chars > 0 and D.text_width( table.concat( chars ) .. "..." ) > width do table.remove( chars ) end
 	fit_cache[key] = table.concat( chars ):gsub( "[%s,]+$", "" ) .. "..."
 	return fit_cache[key]
 end
 
 function D.centered( x, width, y, str, color, margin )
 	str = D.fitted( str, width - ( margin or 8 ) )
-	D.text( x + ( width - GuiGetTextDimensions( gui, str ) ) / 2, y, str, color )
+	D.text( x + ( width - D.text_width( str ) ) / 2, y, str, color )
 end
 
 -- Text wrapped into lines no wider than 'width' onto a surface; returns the y below it
@@ -89,7 +109,7 @@ function D.wrapped( s, x, y, width, str, color, step )
 	local line = ""
 	for word in str:gmatch( "%S+" ) do
 		local try = line == "" and word or ( line .. " " .. word )
-		if line ~= "" and GuiGetTextDimensions( gui, try ) > width then
+		if line ~= "" and D.text_width( try ) > width then
 			s:text( x, y, line, color )
 			y = y + ( step or 10 )
 			line = word
@@ -144,12 +164,10 @@ function Flat:dot( px, py, color, alpha, z )
 	local x, y = self.x + px, self.y + py
 	if D.covered and self:hidden( x - 1, y - 1, x + 1, y + 1 ) then return end
 	local w = self.pen or 1 -- the dot's radius: 1, a finer pen for the guide's sketches (book_pages.lua)
-	GuiZSetForNextWidget( gui, z or 25 )
-	GuiColorSetForNextWidget( gui, color[1], color[2], color[3], alpha or 1 )
-	GuiImage( gui, D.next_id(), x - w, y - w, NOTEBOOK_BRUSH_IMAGE, alpha or 1, w / NOTEBOOK_BRUSH_RES )
+	D.image( x - w, y - w, NOTEBOOK_BRUSH_IMAGE, z or 25, color, alpha, w / NOTEBOOK_BRUSH_RES )
 end
 function Flat:text( px, py, str, color, z, scale )
-	local w = GuiGetTextDimensions( gui, str, scale or 1 )
+	local w = D.text_width( str, scale )
 	if D.covered and self:hidden( self.x + px, self.y + py, self.x + px + w, self.y + py + 9 ) then return w end
 	return D.text( self.x + px, self.y + py, str, color, z, nil, scale )
 end
@@ -238,9 +256,7 @@ function Flat:stamps( row, n, color, z )
 					local x, y = self.x + mx - stamp.w / 2, self.y + my - stamp.h / 2
 					-- under a sheet in the air it isn't drawn (one partly under it is: the sheet's paper lies over it)
 					if not ( D.covered and self:hidden( x, y, x + stamp.w, y + stamp.h ) ) then
-						GuiZSetForNextWidget( gui, z or 25 )
-						GuiColorSetForNextWidget( gui, color[1], color[2], color[3], 1 )
-						GuiImage( gui, D.next_id(), x, y, stamp.file, 1, 1 / NOTEBOOK_BRUSH_RES )
+						D.image( x, y, stamp.file, z or 25, color, 1, 1 / NOTEBOOK_BRUSH_RES )
 					end
 					i, drawn = j + 1, true
 					break

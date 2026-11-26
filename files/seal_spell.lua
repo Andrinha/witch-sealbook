@@ -290,8 +290,10 @@ function compile_spell( seal )
 	local base = DICTIONARY_ELEMENTS[element]
 	if condense > 0 and base.condensed then element = base.condensed end
 	spell.element = element
-	-- levitation alone (the Pyreball Seal): the sphere hangs over the seal instead of flying away
-	spell.floats = spell.form == "levitation" and ( behaviors.thrust or 0 ) < 0.5 * ( ( behaviors.float or 0 ) + ( behaviors.contain or 0 ) ) or nil
+	-- levitation alone (the Pyreball Seal, the Water Orb): the sphere hangs over the seal instead of flying away. A
+	-- Column - even one smaller than the Levitation signs - makes it fly (the Test Book's Orb); only its weight can
+	-- outvote Levitation and make of the seal a shot instead, never a hanging orb
+	spell.floats = spell.form == "levitation" and ( behaviors.thrust or 0 ) <= 0 or nil
 
 	-- a resonance: the element, the form and the signs together make something of their own (resonances.lua); the signs
 	-- it is made of stay in the spell even where alone they would do nothing

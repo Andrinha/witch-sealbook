@@ -53,6 +53,7 @@ local FLIP_SHEETS = 6  -- at most this many sheets in the air: a longer way turn
 local FIRST_OPEN_WAIT = 20 -- opened for the first time, the book lies open this long, then turns to the blank page
 local FULL_GRIMOIRE_SETTING = "witch_notebook.full_grimoire"
 local MARK_SELECTS_INK_SETTING = "witch_notebook.mark_selects_ink"
+local UI_SCALE_SETTING = "witch_notebook.ui_scale"
 -- buttons need ids that stay the same every frame, ink dots use ids from 1 upwards
 local BUTTON = {
 	RECALIBRATE = 900002, BACK = 900003, ON = 900004, -- 900001 and 900008: the calibration's (book_mouse.lua)
@@ -1030,6 +1031,23 @@ end
 
 ---- where the open book lies ----
 
+local function book_ui_scale( def, sw, sh )
+	local percent = tonumber( ModSettingGet( UI_SCALE_SETTING ) ) or 100
+	local requested = math.max( 50, math.min( 125, percent ) ) / 100
+	if requested <= 1 then return requested end
+	-- Leave room for the ink controls beside the cover and the navigation above and below it.
+	local width, height
+	if def.round then
+		width = 432 -- the quire's side column and its ink tools
+		height = 2 * ( def.page + def.gap + BOOK_LOOKS.quire.top ) + 4
+	else
+		local side = def.test and 90 or 42 -- the Test Book has a column of notes on each side
+		width = 2 * ( def.page + def.gap + def.margin + side )
+		height = def.page + 2 * def.margin + ( def.test and 130 or 86 )
+	end
+	return math.min( requested, math.max( 1, math.min( sw / width, sh / height ) ) )
+end
+
 -- A book lies open as a spread: two pages side by side, the spine between; the words over it and under it. It sits a
 -- little higher when the screen is short for the words under a big book.
 local function layout_spread( def, sw, sh )
@@ -1411,14 +1429,14 @@ local function draw_parts( s, parts, data, px, py, frame, named )
 	minx, maxx, miny, maxy = to + ( minx - c ) * k, to + ( maxx - c ) * k, to + ( miny - c ) * k, to + ( maxy - c ) * k
 	local size = view.size
 	-- too wide for the page: the name over what it does
-	if GuiGetTextDimensions( gui, lines[1] ) > size - 6 and part.kind ~= "mark" then
+	if D.text_width( lines[1] ) > size - 6 and part.kind ~= "mark" then
 		lines = { name .. ":", does or "does nothing in this seal" }
 	end
 	local h = 11 * #lines
 	local y = maxy + 3
 	if y + h > size - 3 then y = miny - h - 1 end -- no room under it: over it
 	for i, line in ipairs( lines ) do
-		local w = GuiGetTextDimensions( gui, line )
+		local w = D.text_width( line )
 		local x = math.max( 2, math.min( size - w - 2, ( minx + maxx - w ) / 2 ) )
 		local ly = y + 11 * ( i - 1 )
 		s:image( x - 2, ly - 1, NOTEBOOK_INK_IMAGE, 19, PART_BACK, 0.95, ( w + 4 ) / 2, 5.5 )
@@ -1479,7 +1497,7 @@ local function draw_page( face, pos, mx, my, still )
 			else centered_on( s, size - 19, "Reading the seal...", NOTE_COLOR ) end
 		elseif #editable_page( face ).strokes == 0 then
 			local str = "New seal"
-			if cur.def.round then s:text( ( size - GuiGetTextDimensions( gui, str ) ) / 2, 14, str, NOTE_COLOR )
+			if cur.def.round then s:text( ( size - D.text_width( str ) ) / 2, 14, str, NOTE_COLOR )
 			else s:text( cur.look.label.x, cur.look.label.y, str, NOTE_COLOR ) end
 		end
 		-- a seal that failed on one symbol: what it looks most like, and [Mark] - while its lines stay as they were
@@ -1544,20 +1562,20 @@ local function draw_page( face, pos, mx, my, still )
 	local text = asking and "[really tear out?]" or "[tear out]"
 	local c = asking and { 0.95, 0.4, 0.3 } or { 0.55, 0.55, 0.55 }
 	GuiColorSetForNextWidget( gui, c[1], c[2], c[3], 1 )
-	local tear_x = view.labels and label.x or pos.x + size - GuiGetTextDimensions( gui, text )
+	local tear_x = view.labels and label.x or pos.x + size - D.text_width( text )
 	local tear_y = view.labels and row_y + 11 or row_y
 	if seal.sheet == "" then
-		local edit_w = GuiGetTextDimensions( gui, "[edit]" )
-		local edit_x = view.labels and tear_x + GuiGetTextDimensions( gui, text ) + 6 or tear_x - edit_w - 6
+		local edit_w = D.text_width( "[edit]" )
+		local edit_x = view.labels and tear_x + D.text_width( text ) + 6 or tear_x - edit_w - 6
 		GuiColorSetForNextWidget( gui, 0.55, 0.55, 0.55, 1 )
-		if GuiButton( gui, BUTTON.EDIT + ( face + 1 ) % 2, edit_x, tear_y, "[edit]" ) then
+		if D.button( BUTTON.EDIT + ( face + 1 ) % 2, edit_x, tear_y, "[edit]" ) then
 			tear = nil
 			edit_seal( i )
 			cur.eraser_selected = false
 			return
 		end
 	end
-	if GuiButton( gui, BUTTON.TEAR + ( face + 1 ) % 2, tear_x, tear_y, text ) then
+	if D.button( BUTTON.TEAR + ( face + 1 ) % 2, tear_x, tear_y, text ) then
 		if asking then
 			tear = nil
 			tear_out( i )
@@ -1631,13 +1649,13 @@ local function draw_ink_panel( mx, my, clicked )
 	local left = x - 4
 	-- GuiButton fires on release: a line drawn from the page and let go over Clear must not wipe it
 	local function pressed( id, by, label )
-		local w, h = GuiGetTextDimensions( gui, label )
+		local w, h = D.text_dimensions( label )
 		-- Align the labels' right edges beside the bottle, clear of the book.
 		local bx = x + BOOK_BOTTLE_W + 3 - w
 		left = math.min( left, bx - 2 )
 		notebook_button_rects[id] = { bx, by, w, h }
 		local p = press_at
-		return GuiButton( gui, id, bx, by, label ) and p ~= nil
+		return D.button( id, bx, by, label ) and p ~= nil
 			and p[1] >= bx - 2 and p[1] <= bx + w + 2 and p[2] >= by - 2 and p[2] <= by + h + 2
 	end
 	local color = cur.eraser_selected and GOLD_COLOR or GREY
@@ -1734,7 +1752,7 @@ end
 local function button_rows( x, y, width, buttons )
 	local cx, clicked = x, nil
 	for k, b in ipairs( buttons ) do
-		local w = GuiGetTextDimensions( gui, b.label )
+		local w = D.text_width( b.label )
 		if cx > x and cx + w > x + width then
 			cx = x
 			y = y + 11
@@ -1742,7 +1760,7 @@ local function button_rows( x, y, width, buttons )
 		if b.id then
 			GuiZSetForNextWidget( gui, 20 )
 			GuiColorSetForNextWidget( gui, b.color[1], b.color[2], b.color[3], b.alpha or 1 )
-			if GuiButton( gui, b.id, cx, y, b.label ) then clicked = k end
+			if D.button( b.id, cx, y, b.label ) then clicked = k end
 		else
 			D.text( cx, y, b.label, b.color )
 		end
@@ -1794,7 +1812,7 @@ end
 local function rows_count( width, buttons )
 	local cx, rows = 0, 1
 	for _, b in ipairs( buttons ) do
-		local w = GuiGetTextDimensions( gui, b.label )
+		local w = D.text_width( b.label )
 		if cx > 0 and cx + w > width then cx, rows = 0, rows + 1 end
 		cx = cx + w + 8
 	end
@@ -1877,7 +1895,7 @@ local function line_count( str, width )
 	local line, n = "", 0
 	for word in str:gmatch( "%S+" ) do
 		local try = line == "" and word or ( line .. " " .. word )
-		if line ~= "" and GuiGetTextDimensions( gui, try ) > width then n, line = n + 1, word else line = try end
+		if line ~= "" and D.text_width( try ) > width then n, line = n + 1, word else line = try end
 	end
 	return n + ( line ~= "" and 1 or 0 )
 end
@@ -1904,7 +1922,6 @@ end
 -- Under the book, the drawn seal under the mouse: what it does (spell_notes.lua). Where the screen is too short for it,
 -- beside the book ('beside': x, y, w of a column there), and then without what shows the signs. Returns the y below.
 local function draw_seal_notes( x, y, width, seal, beside )
-	local _, sh = GuiGetScreenDimensions( gui )
 	local places = {}
 	for _, hints in ipairs( { true, false } ) do
 		places[#places + 1] = { x, y, width, hints }
@@ -1916,7 +1933,7 @@ local function draw_seal_notes( x, y, width, seal, beside )
 		local lines = 0
 		for _, row in ipairs( rows ) do lines = lines + line_count( row.text, place[3] ) end
 		at = place
-		if place[2] + 10 * lines <= sh - 2 then break end
+		if place[2] + 10 * lines <= view.screen_h - 2 then break end
 	end
 	x, y, width = at[1], at[2], at[3]
 	for _, row in ipairs( rows ) do y = paragraph( x, y, width, row.text, row.look[1] ) end
@@ -2083,7 +2100,7 @@ local function draw_book( mx, my, clicked, carried, menu_click )
 
 	-- the names over the book: the books the witch carries, the grimoire; recalibration on the right
 	local recalibrate = "[Line not under the cursor?]"
-	local recal_w = GuiGetTextDimensions( gui, recalibrate )
+	local recal_w = D.text_width( recalibrate )
 	local switch, head_below = draw_book_tabs( view.head.x, view.head.y, view.head.w - ( view.def.round and 0 or recal_w + 10 ), carried )
 	local top = math.min( view.head.y, view.cover.y )
 	if cur.def.test then top = math.min( top, draw_test_head( view.head.x, view.head.y, view.head.w ) ) end
@@ -2091,7 +2108,7 @@ local function draw_book( mx, my, clicked, carried, menu_click )
 	if view.def.round then recal_x, recal_y = view.head.x, head_below + 2 end
 	GuiZSetForNextWidget( gui, 20 )
 	GuiColorSetForNextWidget( gui, 0.6, 0.6, 0.6, 1 )
-	if GuiButton( gui, BUTTON.RECALIBRATE, recal_x, recal_y, recalibrate ) and not turning() then
+	if D.button( BUTTON.RECALIBRATE, recal_x, recal_y, recalibrate ) and not turning() then
 		M.start()
 	end
 
@@ -2119,8 +2136,8 @@ local function draw_book( mx, my, clicked, carried, menu_click )
 	if not wiki then left = draw_ink_panel( mx, my, clicked or menu_click ) end
 	-- the Test Book: what the seals on view do, beside their pages
 	if cur.def.test then
-		local sw = GuiGetScreenDimensions( gui )
-		local lw, rw = math.min( NOTES_WIDTH, view.cover.x - 14 ), math.min( NOTES_WIDTH, sw - view.right - 14 )
+		local lw = math.min( NOTES_WIDTH, view.cover.x - 14 )
+		local rw = math.min( NOTES_WIDTH, view.screen_w - view.right - 14 )
 		left, right = math.min( left, view.cover.x - 10 - lw ), view.right + 8 + rw + 2
 		if not turning() then
 			local back, front = spread_faces( cur.spread )
@@ -2147,11 +2164,11 @@ local function draw_book( mx, my, clicked, carried, menu_click )
 	if cur.def.round then back_label, on_label = "[" .. back_name .. "] Flip down", "[" .. on_name .. "] Flip up" end
 	if foot.grouped then D.text( foot.x, foot.y - 12, "Pages", NOTE_COLOR ) end
 	GuiColorSetForNextWidget( gui, GREY[1], GREY[2], GREY[3], can_back and 1 or 0.35 )
-	if GuiButton( gui, BUTTON.BACK, foot.x, foot.y, back_label ) and can_back then turn_pages( -1 ) end
+	if D.button( BUTTON.BACK, foot.x, foot.y, back_label ) and can_back then turn_pages( -1 ) end
 	GuiColorSetForNextWidget( gui, GREY[1], GREY[2], GREY[3], can_on and 1 or 0.35 )
-	local on_x = foot.grouped and foot.x + GuiGetTextDimensions( gui, back_label ) + 12
-		or foot.x + foot.w - GuiGetTextDimensions( gui, on_label )
-	if GuiButton( gui, BUTTON.ON, on_x, foot.y, on_label ) and can_on then turn_pages( 1 ) end
+	local on_x = foot.grouped and foot.x + D.text_width( back_label ) + 12
+		or foot.x + foot.w - D.text_width( on_label )
+	if D.button( BUTTON.ON, on_x, foot.y, on_label ) and can_on then turn_pages( 1 ) end
 	local open_hint = book_open_key_hint()
 	local hint = wiki and ( ( full_grimoire() or cur.def.test ) and "LMB on a page - make it active, " .. open_hint .. " - close"
 		or "Study and redraw the seals, " .. open_hint .. " - close" )
@@ -2177,8 +2194,7 @@ local function draw_book( mx, my, clicked, carried, menu_click )
 		if note then
 			y = paragraph( foot.x, y, foot.w, note.text, GOLD_COLOR )
 		elseif hover_seal then
-			local sw = GuiGetScreenDimensions( gui )
-			local w = math.min( NOTES_WIDTH, sw - view.right - 14 )
+			local w = math.min( NOTES_WIDTH, view.screen_w - view.right - 14 )
 			y = draw_seal_notes( foot.x, y, foot.w, hover_seal, w >= 80 and { x = view.right + 8, y = view.back.y, w = w } or nil )
 		elseif hover_text then
 			y = paragraph( foot.x, y, foot.w, hover_text, LIGHT_TEXT )
@@ -2264,6 +2280,21 @@ function notebook_update()
 	BookReading.step( is_open )
 end
 
+-- A changed layout moves the page out from under any pointer gesture still in progress.
+local function reset_book_pointer()
+	notebook_box, press_at, K.doubt_at = nil, nil, nil
+	if K.menu then K.menu.rows = nil end
+	if drag then
+		drag.f.held, drag.f.back, cur.spread = nil, true, drag.f.from
+		drag = nil
+	end
+	if is_drawing then end_stroke() end
+	witch_notebook_finish_erase()
+	cur.line_on, cur.erase_last_x, cur.erase_last_y = nil, nil, nil
+	K.lasso, BookCompass.gesture, BookLine.gesture = nil, nil, nil
+	wait_release = InputIsMouseButtonDown( MOUSE_LEFT ) or InputIsMouseButtonDown( MOUSE_RIGHT )
+end
+
 -- the book this frame (notebook_update)
 function witch_notebook_frame()
 	gui = gui or GuiCreate()
@@ -2321,13 +2352,20 @@ function witch_notebook_frame()
 		end
 		return
 	end
-	view = cur.def.round and layout_quire( cur.def, sw, sh ) or layout_spread( cur.def, sw, sh )
+	-- the book is laid out in its own units and scaled to the gui: the screen it has is the gui's, divided
+	local ui_scale = book_ui_scale( cur.def, sw, sh )
+	BookDraw.set_scale( ui_scale )
+	local vsw, vsh = sw / ui_scale, sh / ui_scale
+	if view and ( view.screen_w ~= vsw or view.screen_h ~= vsh ) then reset_book_pointer() end
+	view = cur.def.round and layout_quire( cur.def, vsw, vsh ) or layout_spread( cur.def, vsw, vsh )
+	view.screen_w, view.screen_h = vsw, vsh
 	P.begin( view.size )
 	local size = view.size
 	amounts = ink_amounts( player )
 	if not is_drawing then pick_available_ink() end
 	local ink = amounts[selected_ink] or 0
-	local mx, my = M.position( sw, sh )
+	local mx, my = M.position( sw, sh ) -- calibration uses the real GUI dimensions
+	mx, my = mx / ui_scale, my / ui_scale -- the mouse in the book's units, where the pages are
 	if InputIsMouseButtonJustDown( MOUSE_LEFT ) then press_at = { mx, my } end
 	local clicked = not wait_release and InputIsMouseButtonJustDown( MOUSE_LEFT )
 

@@ -155,8 +155,10 @@ local function heading( spell, how )
 	if spell.element == "shockwave" then return "A shockwave from the seal: it pushes creatures away, harms nothing" end
 	local carrier, at = how.carrier, how.at
 	if not how.own then
-		-- the game's own projectile: its words say where, or they are told
+		-- the game's own projectile: its words say where, or they are told; three or more signs of Expansion on the
+		-- game's black hole make it a giga black hole (dictionary.lua)
 		local text = how.effect.text:gsub( "^%l", string.upper )
+		if giga_black_hole( spell.behaviors, how.effect ) then text = "Giga " .. text:lower() end
 		if not ( text:find( " at the ", 1, true ) or text:find( " over the ", 1, true ) or text:find( " from ", 1, true ) ) then
 			text = text .. where( at )
 		end
@@ -281,6 +283,10 @@ local function sign_text( key, w, spell, how )
 		return what[key][1], what[key][2]
 	elseif key == "grow" then
 		if carrier == "ring" then return "a wider ring" end
+		-- three or more of them on the game's black hole make it a giga black hole (dictionary.lua)
+		if giga_black_hole( spell.behaviors, how.effect ) then
+			return "a giga black hole, devouring far wider", "aim it at what must be gone for good"
+		end
 		return "bigger, " .. times( a.size ) .. ( placed and "" or ( ", hits " .. times( a.damage ) .. ", slower" ) )
 	elseif key == "shrink" then
 		if carrier == "ring" then return "a tighter ring" end

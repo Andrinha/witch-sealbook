@@ -550,6 +550,14 @@ DICTIONARY_OVERRIDES = {
 	},
 }
 
+-- Three or more signs of Expansion on the game's black hole, in whatever form it is cast, make it a giga black hole
+-- (cast.lua swaps the file, spell_notes.lua tells it). The weight is the signs' summed size, 1 = one ordinary sign.
+GIGA_BLACK_HOLE_GROW = 3
+function giga_black_hole( behaviors, effect )
+	local grow = ( behaviors or {} ).grow or 0
+	return grow >= GIGA_BLACK_HOLE_GROW and ( effect and effect.file or "" ):find( "deck/black_hole.xml", 1, true ) ~= nil
+end
+
 local CARRIERS = "mods/witch_notebook/files/entities/carriers/"
 function carrier_file( element, carrier )
 	return CARRIERS .. carrier .. "_" .. element .. ".xml"

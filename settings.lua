@@ -53,7 +53,19 @@ local function key_setting_ui( mod_id, gui, in_main_menu, im_id, setting )
 	mod_setting_tooltip( mod_id, gui, in_main_menu, setting )
 end
 
+local ui_scale_setting = {
+	id = "ui_scale",
+	ui_name = "Book UI scale",
+	ui_description = "Changes the size of the open book and its controls.\nLarger sizes are limited by the available screen space.",
+	value_default = 100,
+	value_min = 50,
+	value_max = 125,
+	value_display_formatting = " $0%",
+	scope = MOD_SETTING_SCOPE_RUNTIME,
+}
+
 mod_settings = {
+	ui_scale_setting,
 	{
 		id = "open_key",
 		ui_name = "Open / close book",
@@ -163,6 +175,13 @@ mod_settings = {
 }
 
 function ModSettingsUpdate( init_scope )
+	-- Bring values saved with the old slider range inside the current range.
+	local id = mod_setting_get_id( mod_id, ui_scale_setting )
+	local value = ModSettingGetNextValue( id )
+	if type( value ) == "number" then
+		local clamped = math.max( ui_scale_setting.value_min, math.min( ui_scale_setting.value_max, value ) )
+		if clamped ~= value then ModSettingSetNextValue( id, clamped, false ) end
+	end
 	mod_settings_update( mod_id, mod_settings, init_scope )
 end
 

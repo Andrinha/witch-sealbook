@@ -87,6 +87,23 @@ class Recipes(unittest.TestCase):
                 self.assertTrue(spell["forbidden"], r["key"])
         self.assertEqual([], wrong)
 
+    def test_satellite_flies_with_any_column_and_tether_hangs(self):
+        lua = self.lua
+        # Satellite needs an orb that flies: Link and any Column under the Levitation signs. A hand drawing that adds
+        # Levitation, or has only one of a pair of Column signs, is still a flying orb - only Levitation with no
+        # Column at all hangs, and that one is Tether.
+        for signs in (
+            FORMS["Orb"] + [("link", False)] * 2,
+            [("levitation", False)] * 3 + [("column", False)] + [("link", False)] * 2,
+            [("levitation", False)] * 4 + [("column", False)] + [("link", False)] * 2,
+        ):
+            spell = compiled(lua, tree(lua, ["fire"], signs))
+            self.assertEqual("satellite", spell["resonance"], signs)
+            self.assertFalse(spell["floats"], signs)
+        tether = compiled(lua, tree(lua, ["light"], FORMS["Hanging"] + [("link", False)] * 2))
+        self.assertEqual("tether", tether["resonance"])
+        self.assertTrue(tether["floats"])
+
     def test_the_most_particular_resonance_wins(self):
         lua = self.lua
         # a hot drill still bores a tunnel; a hot crushing shot that doesn't spin melts the rock

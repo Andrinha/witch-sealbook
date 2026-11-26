@@ -693,9 +693,13 @@ local function spawn( ctx, file, x, y, dir_x, dir_y, spell, effect )
 		end
 	end
 
+	-- a giga black hole (dictionary.lua giga_black_hole): the signs of Expansion that made it are spent on it,
+	-- nothing grows the game's own any further
+	local giga = file:find( "black_hole_giga", 1, true ) ~= nil
 	for _, behavior in ipairs( DICTIONARY_BEHAVIORS ) do
 		local w, apply = b[behavior.key], BEHAVIORS[behavior.key]
-		if w and apply and dictionary_behavior_works( behavior.key, carrier ) and not ( resonance and resonance.consumed[behavior.key] ) then
+		if w and apply and not ( giga and behavior.key == "grow" ) and dictionary_behavior_works( behavior.key, carrier )
+			and not ( resonance and resonance.consumed[behavior.key] ) then
 			apply( projectile, w, spell, carrier, ctx )
 		end
 	end
@@ -869,13 +873,16 @@ local function cast_form( ctx )
 	local pierce = ( resonance and resonance.consumed.pierce ) and 0 or ( b.pierce or 0 )
 	local copies = math.max( effect.copies or 1, pierce )
 	local pattern = math.rad( ( effect.copies or 1 ) >= pierce and effect.pattern or 6 * pierce )
+	-- three or more signs of Expansion on the game's black hole make it a giga black hole (dictionary.lua)
+	local file = effect.file
+	if giga_black_hole( b, effect ) then file = file:gsub( "black_hole%.xml$", "black_hole_giga.xml" ) end
 	local cast = {}
 	for i = 1, copies do
 		local fan = copies > 1 and ( ( i - 1 ) / ( copies - 1 ) - 0.5 ) * pattern or 0
 		local angle = base + fan + ( Random( 0, 1000 ) / 1000 - 0.5 ) * spread
 		local sx = at == "sky" and px + ( i - ( copies + 1 ) / 2 ) * 14 or px
-		spawn( ctx, effect.file, sx, py, math.cos( angle ), math.sin( angle ), spell, effect )
-		cast[#cast + 1] = effect.file
+		spawn( ctx, file, sx, py, math.cos( angle ), math.sin( angle ), spell, effect )
+		cast[#cast + 1] = file
 	end
 	return cast
 end

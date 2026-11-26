@@ -1468,6 +1468,13 @@ def test_cast():
         print(f"  {data:30s} -> {[s_['file'] for s_ in shots]}")
         ok &= [s_["file"] for s_ in shots] == want
 
+    # three or more signs of Expansion on the game's black hole make it a giga black hole (dictionary.lua)
+    _, _, _, shots = cast("element=vacuum;form=column" + steady + ";b=grow:3")
+    print(f"  {'element=vacuum;form=column;b=grow:3':30s} -> {[s_['file'] for s_ in shots]}")
+    ok &= [s_["file"] for s_ in shots] == ["black_hole_giga.xml"]
+    _, _, _, shots = cast("element=vacuum;form=column" + steady + ";b=grow:2")
+    ok &= [s_["file"] for s_ in shots] == ["black_hole.xml"]
+
     _, _, _, shots = cast("element=water;form=rain" + steady, mouse=(1000, 0))
     print(f"  cloud appears at the cursor, at most 180 away: x {shots[0]['x']:.0f}")
     ok &= shots[0]["file"] == "cloud_water.xml" and "carriers" in [s_ for s_ in G.shots.values()][0]["file"] and abs(shots[0]["x"] - 180) < 1

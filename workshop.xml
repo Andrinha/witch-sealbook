@@ -30,6 +30,6 @@ Unofficial fan mod. Bug reports are welcome.
 [url=https://github.com/Andrinha/witch-sealbook]Source code[/url]"
 	tags="gameplay,spells,items,alchemy"
 	dont_upload_folders="docs|tests|tools|.idea|.git"
-	dont_upload_files="PLAN.md|WORKSHOP_RELEASE.md"
+	dont_upload_files="AGENTS.md|PLAN.md|WORKSHOP_RELEASE.md"
 >
 </Mod>

@@ -194,7 +194,7 @@ function K.draw_hover( s, page, px, py, size )
 	D.strokes( s, list, function() return GLOW, 1 end, nil, 24 )
 	local minx, maxx, miny, maxy = bounds( list )
 	local line = "Marked: " .. K.name( list[1].mark ) .. " - click to change"
-	local w = GuiGetTextDimensions( D.gui(), line )
+	local w = D.text_width( line )
 	local x = math.max( 2, math.min( size - w - 2, ( minx + maxx - w ) / 2 ) )
 	local y = maxy + 3
 	if y + 11 > size - 3 then y = miny - 12 end
@@ -211,16 +211,16 @@ K.doubt_at = nil -- where [Mark] lay by a failed seal's lines the frame before: 
 -- and [Mark]: a click on it opens the menu of their readings (K.doubt_click).
 -- 's': the page's surface, lying at 'pos' on the screen; the mouse at px, py on it; 'size': the page's.
 function K.draw_doubt( s, page, face, pos, px, py, size )
-	local doubt, gui = page.doubt, D.gui()
+	local doubt = page.doubt
 	local names = {}
 	for i, item in ipairs( doubt.items ) do names[i] = K.name( item ) end
 	local button = "[Mark]"
-	local bw = GuiGetTextDimensions( gui, button )
+	local bw = D.text_width( button )
 	-- on one line, or a reading a line where the page is too narrow for it
 	local lines = { table.concat( names, " or " ) .. "?" }
-	if #names > 1 and GuiGetTextDimensions( gui, lines[1] ) + 4 + bw > size - 6 then lines = { names[1] .. " or", names[2] .. "?" } end
+	if #names > 1 and D.text_width( lines[1] ) + 4 + bw > size - 6 then lines = { names[1] .. " or", names[2] .. "?" } end
 	local w = 0
-	for i, line in ipairs( lines ) do w = math.max( w, GuiGetTextDimensions( gui, line ) + ( i == #lines and 4 + bw or 0 ) ) end
+	for i, line in ipairs( lines ) do w = math.max( w, D.text_width( line ) + ( i == #lines and 4 + bw or 0 ) ) end
 	local minx, maxx, miny, maxy = bounds( doubt.strokes )
 	local h = 11 * #lines
 	local x = math.max( 2, math.min( size - w - 2, ( minx + maxx - w ) / 2 ) )
@@ -240,7 +240,7 @@ function K.draw_doubt( s, page, face, pos, px, py, size )
 	if over_them >= 3 and ( y + h > size - 3 or hides( over_them ) < hides( y ) ) then y = over_them end
 	s:image( x - 2, y - 1, NOTEBOOK_INK_IMAGE, 19, PAPER, 0.95, ( w + 4 ) / 2, h / 2 )
 	for i, line in ipairs( lines ) do s:text( x, y + 11 * ( i - 1 ), line, P.TEXT_COLOR, 18 ) end
-	local bx, by = x + GuiGetTextDimensions( gui, lines[#lines] ) + 4, y + 11 * ( #lines - 1 )
+	local bx, by = x + D.text_width( lines[#lines] ) + 4, y + 11 * ( #lines - 1 )
 	local over = px >= bx - 2 and px <= bx + bw + 2 and py >= by - 2 and py <= by + 10
 	if over then D.strokes( s, doubt.strokes, function() return GLOW, 1 end, nil, 24 ) end
 	s:text( bx, by, button, over and GLOW or P.TITLE_COLOR, 18 )
@@ -281,7 +281,6 @@ end
 -- own reading back (lines marked before), and Cancel. The rows are kept for the next frame's click (K.click).
 function K.draw_menu( s, pos, bounds, mx, my )
 	local menu = K.menu
-	local gui = D.gui()
 	D.strokes( s, menu.strokes, function() return GLOW, 1 end, nil, 24 )
 	local mark = menu.strokes[1].mark
 	local rows = {}
@@ -293,9 +292,9 @@ function K.draw_menu( s, pos, bounds, mx, my )
 	if menu.marked then rows[#rows + 1] = { kind = "unmark", text = "As the book reads it" } end
 	rows[#rows + 1] = { kind = "cancel", text = "Cancel" }
 	local title = "These lines are:"
-	local w = GuiGetTextDimensions( gui, title ) + 8
+	local w = D.text_width( title ) + 8
 	for _, row in ipairs( rows ) do
-		w = math.max( w, 22 + GuiGetTextDimensions( gui, row.text ) + ( row.note and 8 + GuiGetTextDimensions( gui, row.note ) or 0 ) )
+		w = math.max( w, 22 + D.text_width( row.text ) + ( row.note and 8 + D.text_width( row.note ) or 0 ) )
 	end
 	local h = 14 + ROW * #rows + 3
 	-- by where the lasso was let go, on the book's pages
@@ -316,7 +315,7 @@ function K.draw_menu( s, pos, bounds, mx, my )
 			P.glyph( D.SCREEN, item.kind, item.key, x + 9, ry + ROW / 2, 10, turn, item.mirror, color, 4 )
 		end
 		D.text( x + 18, ry + 2, row.text, row.kind == "item" and P.TEXT_COLOR or P.NOTE_COLOR, 4 )
-		if row.note then D.text( x + w - 4 - GuiGetTextDimensions( gui, row.note ), ry + 2, row.note, P.NOTE_COLOR, 4 ) end
+		if row.note then D.text( x + w - 4 - D.text_width( row.note ), ry + 2, row.note, P.NOTE_COLOR, 4 ) end
 	end
 	menu.rows = rows
 end

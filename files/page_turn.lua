@@ -203,11 +203,9 @@ function Curl:dot( px, py, color, alpha )
 	if self.last_x and ( x - self.last_x ) ^ 2 + ( y - self.last_y ) ^ 2 < CURL_DOT_GAP ^ 2 then return end
 	self.last_x, self.last_y = x, y
 	local c = self:shade( color, i )
-	GuiZSetForNextWidget( D.gui(), self:zc( i ) )
-	GuiColorSetForNextWidget( D.gui(), c[1], c[2], c[3], alpha or 1 )
 	-- the pen's dot at its own size, as on a flat page: scaled by a hair its texels no longer fall on the screen's pixels
 	local w = self.pen or 1
-	GuiImage( D.gui(), D.next_id(), x - w, y - w, NOTEBOOK_BRUSH_IMAGE, alpha or 1, w / NOTEBOOK_BRUSH_RES )
+	D.image( x - w, y - w, NOTEBOOK_BRUSH_IMAGE, self:zc( i ), c, alpha, w / NOTEBOOK_BRUSH_RES )
 end
 
 -- the size of an image a page carries
@@ -226,10 +224,8 @@ function Curl:put( px0, py0, px1, py1, file, w, h, color, alpha, behind )
 	local x0, y0, _, i = self:map( px0, py0 )
 	local x1, y1 = self:map( px1, py1 )
 	local c = self:shade( color, i )
-	GuiZSetForNextWidget( D.gui(), seen and self:zc( i0, i1 ) or math.max( self:z( i0 ), self:z( i1 ) ) + 0.0005 )
-	GuiColorSetForNextWidget( D.gui(), c[1], c[2], c[3], alpha or 1 )
-	GuiImage( D.gui(), D.next_id(), math.min( x0, x1 ), math.min( y0, y1 ), file, alpha or 1, math.abs( x1 - x0 ) / w,
-		math.abs( y1 - y0 ) / h )
+	D.image( math.min( x0, x1 ), math.min( y0, y1 ), file, seen and self:zc( i0, i1 ) or math.max( self:z( i0 ), self:z( i1 ) ) + 0.0005,
+		c, alpha, math.abs( x1 - x0 ) / w, math.abs( y1 - y0 ) / h )
 end
 
 -- An image on the page, squeezed with the paper: on a sheet turning sideways one cut into columns (image_cut_columns)
@@ -262,10 +258,8 @@ function Curl:text( px, py, str, color, z, scale )
 				local x0, y0, _, i = self:map( gx, gy )
 				local x1, y1 = self:map( gx + glyph.w * scale, gy + glyph.h * scale )
 				local c = self:shade( color or { 1, 1, 1 }, i )
-				GuiZSetForNextWidget( D.gui(), self:zc( i0, i1 ) - 0.0001 )
-				GuiColorSetForNextWidget( D.gui(), c[1], c[2], c[3], 1 )
-				GuiImage( D.gui(), D.next_id(), math.min( x0, x1 ), math.min( y0, y1 ), glyph.file, 1, math.abs( x1 - x0 ) / glyph.w,
-					math.abs( y1 - y0 ) / glyph.h )
+				D.image( math.min( x0, x1 ), math.min( y0, y1 ), glyph.file, self:zc( i0, i1 ) - 0.0001, c, 1,
+					math.abs( x1 - x0 ) / glyph.w, math.abs( y1 - y0 ) / glyph.h )
 			end
 		end
 		x = x + ( glyph and glyph.width or BOOK_WORD_SPACE ) * scale
@@ -391,11 +385,9 @@ function T.draw_sheet( view, shape, faces, draw_face )
 				-- a hair longer than the strip, so no gaps show between strips
 				local x, y = screen( view, math.min( a0, a1 ) - 0.15, size / 2 * ( 1 - k ) + ( shape.shift[i] + shape.shift[i + 1] ) / 2 )
 				local along = ( math.abs( a1 - a0 ) + 0.3 ) / view.strip
-				GuiZSetForNextWidget( D.gui(), s:z( i ) )
 				-- shaded paper a little warmer; lit fully, its own colour
-				GuiColorSetForNextWidget( D.gui(), c, c, c * ( 0.97 + 0.03 * c ), 1 )
-				GuiImage( D.gui(), D.next_id(), x, y, book_turn_strip_image( view.def, face.kind, strip, face.front ), 1, view.vertical and k or along,
-					view.vertical and along or k )
+				D.image( x, y, book_turn_strip_image( view.def, face.kind, strip, face.front ), s:z( i ),
+					{ c, c, c * ( 0.97 + 0.03 * c ) }, 1, view.vertical and k or along, view.vertical and along or k )
 			end
 		end
 		draw_face( s, face.face, seen )

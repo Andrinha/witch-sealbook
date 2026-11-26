@@ -54,7 +54,7 @@ end
 -- text centered on the page; 'margin': room kept free at the sides (a ribbon over the page's top edge)
 function P.centered( s, y, str, color, margin )
 	str = D.fitted( str, size - ( margin or 8 ) )
-	s:text( ( size - GuiGetTextDimensions( D.gui(), str ) ) / 2, y, str, color )
+	s:text( ( size - D.text_width( str ) ) / 2, y, str, color )
 end
 
 -- a title with a flourish under it
@@ -201,7 +201,7 @@ local function sketch( s, strokes, color )
 end
 -- a handwritten heading: the words, a wavy line under them
 local function heading( s, y, str, color )
-	local w = GuiGetTextDimensions( D.gui(), str )
+	local w = D.text_width( str )
 	local x0 = math.floor( ( size - w ) / 2 )
 	s:text( x0, y, str, color )
 	local line = {}
@@ -212,7 +212,7 @@ local function heading( s, y, str, color )
 	sketch( s, { line }, color )
 end
 local function note( s, cx, y, str, color )
-	local w = GuiGetTextDimensions( D.gui(), str )
+	local w = D.text_width( str )
 	s:text( math.floor( cx - w / 2 ), y, str, color or P.NOTE_COLOR )
 end
 -- a little arrow: from x0, y0 to x1, y1, its head at the end
@@ -567,7 +567,7 @@ do
 	end
 
 	local function centered_text( s, y, str, color, scale )
-		local w = GuiGetTextDimensions( D.gui(), str, scale or 1 )
+		local w = D.text_width( str, scale )
 		s:text( math.floor( ( size - w ) / 2 ), y, str, color, nil, scale )
 	end
 
